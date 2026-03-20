@@ -1,0 +1,4286 @@
+---
+title: "Working Report I: Comparison of MAgPIE model outputs with historical data (2010-2020)"
+author: "Letícia F. Godoi, Mário L. Vicchietti, Fernando M. Ramos"
+date: "September 2025"
+output:
+  rmdformats::material:
+    base_format: bookdown::html_document2   
+    cards: false
+    lightbox: true
+    thumbnails: true
+    highlight: "tango"
+    fig_caption: true
+    code_folding: "hide"
+bibliography: biblio.bib
+csl: apa.csl
+---
+  
+```{=html}
+<style>
+  code {
+    color: #053D7F !important;
+  }
+body {
+  text-align: justify;
+}
+/* pinta a faixa superior do tema material */
+  .header-panel,
+.material-header,
+.navbar,
+.navbar-default,
+.navbar-inverse,
+.navbar.navbar-inverse.navbar-fixed-top,
+.site-header {
+  background-color: #053D7F !important;
+    border-color: #053D7F !important;
+}
+
+
+.material-header h1.title,
+h1.title,
+.author, .date,
+.navbar a,
+.navbar .navbar-brand,
+.navbar .nav > li > a {
+  color: #ffffff !important;
+}
+
+/* insere o logo */
+  .fgv-logo-fixed {
+    position: fixed;
+    left: 60px;     
+    bottom: 20px;   
+    width: 280px;   
+    z-index: 9999;
+    opacity: 1;
+    background: none !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+.fgv-logo-fixed img {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+
+@media (min-width: 1400px){
+  .fgv-logo-fixed{ width: 280px; }
+}
+
+
+@media (max-width: 992px){
+  .fgv-logo-fixed{ display: none; }
+}
+
+
+div.figure {
+  width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+
+.material-doc .section .figure, 
+.material-doc .section .figure img {
+  box-shadow: none !important;   
+  border: none !important;       
+  background: none !important;   
+}
+
+
+.figure img {
+  display: block;
+  margin: 0 auto;
+  max-width: 100% !important;
+  height: auto !important;
+}
+</style>
+  ```
+
+```{=html}
+<div class="fgv-logo-fixed">
+  <img src="img/logo_fgv.jpeg" alt="FGV">
+  </div>
+  ```
+
+```{r preambulo, message=FALSE, warning=FALSE, include=FALSE}
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(ggspatial)
+library(raster)
+library(sp)
+library(Polychrome)
+library(knitr)
+library(tidyr)
+library(magclass)
+library(madrat)
+library(ggplot2)
+library(patchwork)
+library(scales)
+library(kableExtra)
+
+calArea <- function(ix,iy,res=0.5,mha=1) { # pixelarea in km2, mha as factor
+  mha*(111.263*res)*(111.263*res)*cos(iy*pi/180)
+}
+
+biomes <- sf::st_read("br_biomes.shp")
+clustermap<-"clustermap_rev4.117_c200_67420_h12.rds"
+
+crop<-read.magpie("cell.croparea_0.5_share.mz")
+years<-c('y2010','y2015','y2020')
+
+land<-read.magpie("cell.land_0.5_share.mz")
+```
+
+# Summary
+
+## Context and objective
+
+The Model of Agricultural Production and Its Impact on the Environment (MAgPIE) is a global partial equilibrium model of land use that simulates competition for land and water resources worldwide. Developed and maintained by researchers from Potsdam Institute for Climate Impact Research (PIK), it provides a framework for analyzing the implications of these dynamics for sustainable development under future scenarios of rising demand for food, energy, and materials. In addition, MAgPIE allows for the assessment of agricultural production patterns, the impacts of climate change, greenhouse gas mitigation strategies, and alternative land-use policies [@Dietrich2019; @PIKMAgPIE].
+
+The model requires input data for parameter calibration and scenario specification. In this context, geographically explicit historical data on biophysical conditions are provided by the Lund-Potsdam-Jena managed Land (LPJmL) model. These inputs include carbon density across different vegetation types, agricultural productivity, and water availability for irrigation [@PIKLPJmL].
+
+The purpose of this report is to present the results obtained from the analysis of MAgPIE version 4.10.0 simulation outputs in comparison with official Brazilian data. The spatial scope of the study is the Brazilian territory, while the temporal frame extends from 2010 to 2020, with three reference years (2010, 2015, and 2020). The comparison focused on production, yield, harvested area, and spatial distribution related to agriculture, cattle ranching, and deforestation, with the aim of identifying gaps and key aspects that should be revised or incorporated to improve the model’s representation of the Brazilian context.
+
+# Data and methods
+
+## MAgPIE - Default version
+
+### Model configuration 
+
+In this study, we refer to version 4.10.0 of MAgPIE as the default version. All settings described below correspond to this version. In this configuration, spatial grid cells at a $0.5^\circ$ resolution worldwide are aggregated into 200 clusters. The clustering process is based on several criteria, including potential crop productivity, land and water availability, land use, climatic conditions, population, and food demand, with most of the relevant information derived from the LPJmL model. Furthermore, the world is divided into 12 regions, each comprising a distinct number of clusters, as illustrated in Figure 1. It should be noted that the designation default version is specific to this study and may differ in other applications.
+
+```{r message=FALSE, warning=FALSE,  fig.cap="**Figure 1:** MAgPIE world regions and cluster settings.", fig.width=8, fig.height=4}
+df<-readRDS(clustermap)
+
+coords <- strsplit(df$cell, "\\.")  
+mat    <- do.call(rbind, coords) 
+df$lon <- mat[,1]
+df$lat <- mat[,2]
+df$iso <- mat[,3]
+df$lon <- as.numeric(gsub("p", ".", df$lon))
+df$lat <- as.numeric(gsub("p", ".", df$lat))
+
+df_plot <- df %>%
+  mutate(cluster3 = substr(cluster, 1, 3))
+
+valores_unicos <- unique(df_plot$cluster)
+
+resultado <- tibble(valor = valores_unicos) %>%
+  mutate(regiao = substr(valor, 1, 3)) %>%   
+  count(regiao, name = "n")    %>%     
+  mutate(regiao_final = paste0(regiao, " (", n, ")")) 
+
+df_final <- df_plot %>%
+  left_join(resultado, by = c("cluster3" = "regiao"))
+cores_custom <- c(
+ #"#A8A8A8",
+  "#ED9659", "#3CB44B", "#FDD61C", "#898916",
+  "#FF9999", "#9DCFC9", "#4363D8", "#43D4F4", "#820505",
+  "#9A6425", "#911FB4", "#E52654"
+)
+
+
+ggplot(df_final, aes(x = lon, y = lat, fill = regiao_final)) +
+  geom_tile() +
+  coord_equal() +
+  scale_fill_manual(values = cores_custom, 
+                    guide = guide_legend(nrow = 2,
+                    title.position = "top" )) +
+  theme_minimal() +
+  labs(fill = "Region (number of cluster)") +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.title.align = 0
+  ) 
+
+```
+
+
+Given that the primary focus of this analysis is on Brazil, we present more detailed information for the LAM region, which encompasses the countries of Latin America. This region is composed of 26 clusters, with the constituent grid cells highlighted in different colors in Figure 2. It is important to note that cells belonging to the same cluster are not necessarily geographically contiguous, as the clustering is based on multiple criteria beyond spatial proximity.
+
+```{r message=FALSE, warning=FALSE, fig.cap="**Figure 2:** Spatial grid cells in the LAM region, aggregated into clusters according to the MAgPIE default configuration.", fig.height=9, fig.width=8}
+
+df<-readRDS(clustermap)
+LAM<-subset(df, region=='LAM')
+coords <- strsplit(LAM$cell, "\\.")  
+mat    <- do.call(rbind, coords) 
+LAM$lon <- mat[,1]
+LAM$lat <- mat[,2]
+LAM$iso <- mat[,3]
+LAM$lon <- as.numeric(gsub("p", ".", LAM$lon))
+LAM$lat <- as.numeric(gsub("p", ".", LAM$lat))
+valores_unicos <- unique(LAM$cluster)
+r <- rasterFromXYZ(cbind(LAM[,c("lon","lat")], z=1), 
+                   res = c(min(diff(sort(unique(LAM$lon)))),
+                           min(diff(sort(unique(LAM$lat))))))
+
+polys <- rasterToPolygons(r, dissolve = FALSE)
+pts_sp <- SpatialPointsDataFrame(
+  coords      = LAM[, c("lon","lat")],
+  data        = LAM["cluster", drop = FALSE],
+  proj4string = CRS(proj4string(polys)))
+
+polys$cluster <- over(polys, pts_sp)$cluster
+
+
+pal <- createPalette(26, c("#ff0000", "#00ff00", "#0000ff"))   
+cols  <- pal[ match(polys$cluster, valores_unicos) ]
+
+plot(polys,
+     col    = cols,
+     border = "grey80",
+     lwd    = 0.5)
+legend("bottomleft", inset = c(0.05, 0),  
+       legend = valores_unicos,
+       fill = pal, 
+       ncol = 3,
+       cex = 0.6,
+       pt.cex = 0.6
+)                       
+```
+
+Of the 26 clusters in the LAM region, numbered 59 to 84, 18 contain at least one grid cell within Brazilian territory. The spatial distribution of these cells in Brazil, corresponding to each cluster, is presented in Figure 3, with a total of 2,901 grid cells considered across the entire national territory.
+
+```{r message=FALSE, warning=FALSE, fig.cap="**Figure 3:** Spatial grid cells within Brazilian territory, distributed across 18 clusters of the LAM region.", fig.height=9, fig.width=8}
+
+map<-readRDS(clustermap)
+BRA<-subset(map, country=='BRA')
+coords <- strsplit(BRA$cell, "\\.")  
+mat    <- do.call(rbind, coords) 
+BRA$lon <- mat[,1]
+BRA$lat <- mat[,2]
+BRA$iso <- mat[,3]
+BRA$lon <- as.numeric(gsub("p", ".", BRA$lon))
+BRA$lat <- as.numeric(gsub("p", ".", BRA$lat))
+valores_unicos <- unique(BRA$cluster)
+
+r <- rasterFromXYZ(cbind(BRA[,c("lon","lat")], z=1), 
+                   res = c(min(diff(sort(unique(BRA$lon)))),
+                           min(diff(sort(unique(BRA$lat))))))
+
+polys <- rasterToPolygons(r, dissolve = FALSE)
+pts_sp <- SpatialPointsDataFrame(
+  coords      = BRA[, c("lon","lat")],
+  data        = BRA["cluster", drop = FALSE],
+  proj4string = CRS(proj4string(polys))  # usa o mesmo CRS de 'polys'
+)
+polys$cluster <- over(polys, pts_sp)$cluster
+
+
+
+pal <- createPalette(18, c("#ff0000", "#00ff00", "#0000ff"))  # cores 
+cols  <- pal[ match(polys$cluster, valores_unicos) ]
+myplot<-
+plot(polys,
+     col    = cols,
+     border = "grey80",
+     lwd    = 0.5)#,
+    #add    = TRUE)
+legend("bottomleft", inset = c(0.05, 0),                 
+       legend = valores_unicos,
+       fill = pal, 
+       ncol = 3,
+       cex = 0.6,
+       pt.cex = 0.6
+)               
+
+``` 
+
+The scenario adopted in the model configuration for this simulation corresponds to SSP2. Regarding the temporal resolution, observed data sets with 5-year intervals were selected, covering the period from 1965 to 2010. The simulated time horizon extends from 1995 to 2100, with 5-year steps from 1995 to 2060 and 10-year steps thereafter. The input data employed in this simulation are the same as those made available by the model developers for download and originate from FAOSTAT [@FAOSTAT].
+
+Computationally, MAgPIE operates through an interface between programming in R and GAMS: R codes handle data preparation, input and output processing, and supporting functions, while GAMS executes the optimization routines using mathematical solvers (CPLEX and CONOPT). With respect to R routines, MAgPIE relies on several libraries developed and maintained by PIK, including ${magclass}, ${madrat}, ${luplot}, and ${gdx2}. The following three subsections detail how MAgPIE works in relation to crop areas and yields, cattle proxy, and land-use change processes.
+
+### Crop area, production and yield
+
+MAgPIE determines harvested areas, production and yields through an optimization framework that integrates socioeconomic demand with biophysical supply constraints. Rather than functioning as a process-based crop model, MAgPIE links global demand to regional production by minimizing costs under land, technological, and environmental restrictions [@Dietrich2019].
+
+Input data consist of socioeconomic drivers, including population growth, income, dietary change, and trade assumptions; biophysical information on potential crop yields simulated by the LPJmL vegetation model under given climate and soil conditions; spatially explicit land availability and restrictions, including current land cover and protected areas; and technological parameters describing production costs and pathways of yield intensification.
+
+Within each time step, MAgPIE solves a recursive dynamic cost-minimization problem. Regional and global food demand must be satisfied at least cost, with the model allocating land among competing uses and crops subject to the aforementioned constraints. Harvested areas emerge endogenously from this allocation: they represent the land use pattern that minimizes production and conversion costs while ensuring sufficient supply. 
+
+For the production data, the **magpie4** library in R was employed to extract the aggregated outputs from the model runs. Because these outputs were expressed in tons of dry matter (tDM), correction factors were applied to convert them into fresh weight tons (t). The correction factors used for each crop are presented in the table below.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+txtconversion<- "
+'Crop' 'Conversion_factors'
+'Maize'  '0.85' 
+'Rice' '0.85'
+'Temperate cereals' '0.87'
+'Soybean' '0.89'
+'Cotton'     '0.90'  
+'Groundnut' '0.90'
+'Sugar cane' '0.30'     
+    'Roots and Tubers' '0.30'       
+"
+
+dfconversion <- read.table(text = txtconversion, header = TRUE)
+
+reactable::reactable(
+  dfconversion[, c("Crop", "Conversion_factors")],  
+  highlight = TRUE,
+  striped = TRUE,
+  bordered = TRUE,
+  defaultExpanded = FALSE
+)
+```
+
+
+Subsequently, since the data were available only in aggregated form, a disaggregation procedure was required to enable analysis at the Brazilian territorial level. 
+
+Crop yield was calculated as the ratio between total production (tons) and harvested area (hectares), providing the average yield for each crop, as expressed in the equation:
+
+\[
+    \text{Yield} = \frac{\text{Production (t)}}{\text{Harvested area (ha)}}
+\]
+
+### Cattle proxy
+
+In addition to crops, MAgPIE also represents livestock production, which is of particular importance in land-use modeling due to its large resource requirements and environmental footprint. Livestock demand is driven by exogenous socioeconomic assumptions (population growth, income, dietary preferences), while production is modeled through a cost-minimization framework that allocates pasture land and feed resources in order to satisfy regional consumption needs [@Dietrich2019].
+
+The model does not simulate animal physiology explicitly, but instead uses proxy variables to represent livestock herds at the grid-cell level. For cattle, the central indicator is the cattle stock proxy. This proxy approach enables MAgPIE to link cattle production to land-use dynamics without relying on detailed herd composition models.
+
+Livestock production is determined by the interaction of three major components: feed demand, derived from dietary patterns and calibrated to FAO statistics, which establishes the quantity of animal products that must be supplied; feed supply and allocation, where ruminants are assumed to consume a mix of pasture biomass and crop-based feedstuffs; and land use for pasture, which emerges endogenously as MAgPIE allocates land between pasture and cropland to meet both feed and food demand at least cost.
+
+The cattle stock proxy is thus an endogenous outcome of this optimization. It reflects both the number of cattle required to meet demand and the spatial allocation of pasture that supports this herd. In a default run, the outputs provide aggregate cattle numbers (stock proxy values at regional scale), and their spatial distribution across MAgPIE cells (in mio. animals) can be obtained through the following code and the ``**fulldata.gdx**'' output file. All supporting functions and files can be found at [@Vicchietti_Cattle].
+
+### Land-use change
+
+Land-use dynamics in MAgPIE are represented through a set of land categories that capture both natural ecosystems and managed lands. The core categories relevant to forest dynamics include primary forest, secondary forest, and other natural land [@popp2017land]. Transitions among these categories are determined endogenously as the model balances agricultural expansion with conservation and resource constraints.
+
+At each time step, MAgPIE solves for the land allocation that minimizes production and land conversion costs while meeting global food, feed, and bioenergy demand. The model considers distinct categories to account for different ecological values and regeneration dynamics. Here we focus on changes in:
+
+- Primary forest, which represents undisturbed natural forest;
+
+- Secondary forest, which refers to regrown or previously disturbed forest land;
+
+- Other land, which encompasses non-forest natural vegetation types such as savannas, shrub lands, and grasslands.
+
+Deforestation thus emerges as a by-product of the optimization process: when agricultural demand cannot be satisfied through intensification or trade adjustments, the model allocates new cropland or pasture by converting forest or other natural land. The outputs include total areas of primary forest, secondary forest, and other land, reported as spatially explicit changes at the grid-cell level (in Mha), which can be accessed in a default MAgPIE run through the output file ``**cell.land_0.5_share.mz**''. 
+
+## PAM
+
+The Municipal Agricultural Production survey (Produção Agrícola Municipal – PAM) is one of the core statistical programs conducted by the Brazilian Institute of Geography and Statistics (IBGE). Initiated in 1974, PAM has been published annually ever since. Its main purpose is to provide, at the municipal level, a consistent and detailed record of the country’s crop production. The survey covers both temporary crops, which are short or medium cycle, and permanent crops, which are long cycle. In recent editions, PAM has included data on sixty-four products, thirty-one classified as temporary crops and thirty-three as permanent crops. Results are disseminated at multiple scales of aggregation: municipality, microregion, mesoregion, state, major region, and Brazil as a whole [@IBGE_PAM_Methodology; @IBGE_PAM_Series]. 
+
+The variables present in PAM include planted area, area destined for harvest, harvested area, quantity produced, average yield, average price paid to producers, and the corresponding production value. These are expressed in standardized units such as hectares, metric tons, kilograms per hectare, and Brazilian reais. To ensure representativeness, IBGE only publishes data for municipalities that record at least one hectare of planted or harvested area and at least one metric ton of production for a given crop in the reference year. The survey’s reference period runs from January 1 to December 31, and results are aligned to the calendar year [@IBGE_PAM_Methodology; @IBGE_PAM_Series].
+
+Data collection is carried out annually by IBGE field agents through municipal questionnaires. The process combines information obtained from producers, local agricultural technicians, rural unions, government agencies, and specialized entities. Special methodological rules are applied to handle products with multiple harvests in a single year, such as peanuts, potatoes, maize, and beans. PAM datasets can be obtained through SIDRA system (Sistema IBGE de Recuperação Automática), where users can access standardized tables and time series, and also via the IBGE data APIs. Researchers frequently rely on open-source packages such as sidrar (R) or sidrapy (Python) to programmatically query and process PAM data [@IBGE_SIDRA_API]. 
+
+## PPM
+
+The Municipal Livestock Production Survey (Pesquisa da Pecuária Municipal – PPM) conducted annually by the Brazilian Institute of Geography and Statistics (IBGE) serves as the primary and most comprehensive statistical source on Brazil’s livestock sector. The survey captures livestock inventories and production within every municipality, providing population counts—such as bovines, swine, poultry, quails, equines, buffaloes, goats, and sheep, as well as outputs of animal origin including milk, chicken and quail eggs, honey, raw wool, silkworm cocoons, and aquaculture products like fish, shrimp, and mollusks [@IBGE_PPM].
+
+The data collection process integrates interviews and questionnaire responses from producers, local technical agents, public and private institutions related to production, commercialization, regulation, industrialization, technical assistance, and rural development. In terms of thematic coverage, PPM offers a detailed depiction of both animal stock and production dynamics across geographical levels - from municipalities to microregions, mesoregions, states, major regions and the total of Brazil - through tables accessible in SIDRA [@IBGE_SIDRA_API].
+
+PPM’s results are presented in two complementary packages: an informative report highlighting principal results, spatial distributions, and production values across geographic levels, and a second part with technical notes elaborating on methodology, definitions, and adjustments. While not as old as PAM, PPM extends back decades, with datasets covering at least until 2022, and possibly earlier [@IBGE_PPM]. 
+
+## PRODES
+
+The PRODES Project (Projeto de Monitoramento do Desmatamento na Amazônia Legal) is the official system operated by the Brazilian National Institute for Space Research (INPE) to monitor and estimate the annual rate of clear-cut deforestation in the Brazilian Legal Amazon. It has been in operation since 1988 and remains the world’s longest-running satellite-based deforestation monitoring program. The primary objective of PRODES is to produce reliable estimates of forest loss, using high-resolution satellite images, notably from the Landsat series and compatible sensors, with a spatial resolution of 30 meters. This resolution enables the detection of clear-cut deforestation in primary forest areas larger than 6.25 hectares in the Amazon and 1 hectare in other biomes, such as the Cerrado [@INPE_PRODES].
+
+The system publishes a preliminary estimate in December of each year, covering deforestation that occurred between August of the previous year and July of the current year, and releases a consolidated dataset in the first half of the following year. These official figures are used by the Brazilian government to design, monitor, and evaluate environmental policies and by the scientific community for long-term analyses of land-use change and conservation dynamics [@INPE_PRODES_Data].
+
+From a methodological perspective, PRODES initially relied on visual interpretation combined with computer-assisted classification of satellite images. Until 2002, manual interpretation played a dominant role; from 2003 onwards, INPE incorporated automated classification systems, with human analysts performing complementary validation and quality control. The consolidated PRODES data are considered highly reliable, with overall accuracy estimates near 95\% for official deforestation statistics. Since 2004, INPE has pursued a transparency policy by making PRODES datasets, maps, and shapefiles publicly available. These data are integrated into the TerraBrasilis platform, which provides interactive access, dashboards, and web services [@INPE_PRODES_TerraBrasilis]. 
+
+# Results
+
+The following section presents the results of the comparison between MAgPIE simulation outputs and official Brazilian data. The analysis focuses on the period from 2010 to 2020, considering the reference years 2010, 2015, and 2020. Results are examined in terms of production, yield, harvested area, and spatial distribution, with a specific emphasis on agriculture, livestock, and deforestation. This structure allows for a systematic assessment of the model’s capacity to reproduce the Brazilian context, as well as the identification of discrepancies and potential areas for model improvement.
+
+## Crops
+
+### Soybean
+
+Brazilian data on the total harvested area (Mha) of soybean, collected from PAM/IBGE, along with the MAgPIE outputs for the years 2010, 2015, and 2020, are presented below. 
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+ha_soybean_pam <- c(23.33,32.11,37.09)
+ha_soybean_mag <- c(27.21,27.43,26.52)
+
+erro <- (ha_soybean_mag - ha_soybean_pam)/ha_soybean_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = ha_soybean_pam,
+  "MAgPIE (Default)" = ha_soybean_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Soybean harvested area (Mha).")
+```
+In 2010, the MAgPIE results showed a positive deviation in relation to the harvested area; however, this pattern was not observed in subsequent years, as the model underestimated the total harvested area, with deviations of $-14.57\%$ and $-28.50\%$ in 2015 and 2020, respectively. Although official data indicate an expansion in the total harvested soybean area, model output instead suggests a decline.
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+
+```{r fig.height=5, fig.width=15, message=FALSE, warning=FALSE}
+
+
+plots <- list() 
+for (y in years){
+  cropBRA<-crop['BRA',y,'soybean']
+  df<-as.data.frame(cropBRA,rev=2)
+  names(df)<-c("lon","lat","iso","year","crop","w","value")
+  df <- df %>%
+    group_by(lon, lat) %>%
+    summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+  df$area_cell<-calArea(df$lon,df$lat,res=0.5,mha=1)
+  df$newvalues<-df$area_cell*df$value*100 #ha
+  Total_ha=sum(df$newvalues, na.rm = TRUE ) #unit: ha
+  Total_Mha=Total_ha/1e6 #unit: Mha
+
+  BRA<-subset(map, country=='BRA')
+  coords <- strsplit(BRA$cell, "\\.")  
+  mat    <- do.call(rbind, coords) 
+  BRA$lon <- mat[,1]
+  BRA$lat <- mat[,2]
+  BRA$iso <- mat[,3]
+  BRA$lon <- as.numeric(gsub("p", ".", BRA$lon))
+  BRA$lat <- as.numeric(gsub("p", ".", BRA$lat))
+  
+  dfmap <- BRA %>%
+    left_join(df, by = c("lon", "lat"))
+  
+  r <- rasterFromXYZ(cbind(df[,c("lon","lat",
+                                   "value","newvalues")], z=1), 
+                     res = c(min(diff(sort(unique(BRA$lon)))),
+                             min(diff(sort(unique(BRA$lat))))))
+  
+  polys <- rasterToPolygons(r, dissolve = FALSE)
+  
+  crs(polys) <- CRS("+init=EPSG:4326")
+  
+  
+  cells_sf  <- st_as_sf(polys) %>%
+      st_transform(st_crs(biomes))
+  
+  
+  cells_sf  <- st_make_valid(cells_sf)
+    biomes <- st_make_valid(biomes)
+  
+  
+  int_sf <- st_intersection(
+      cells_sf  %>% mutate(cell_id = row_number()),
+      biomes %>% dplyr::select(CD_LEGEN1))
+  
+  
+  int_sf <- int_sf %>%
+      filter(!st_is_empty(.)) %>%
+      st_collection_extract("POLYGON")
+  
+  int_sf <- int_sf %>%
+      mutate(area = st_area(geometry))
+  
+  majoritario <- int_sf %>%
+      group_by(cell_id) %>%
+      slice_max(area, n = 1, with_ties = FALSE) %>%
+      ungroup() %>%
+      dplyr::select(cell_id, CD_LEGEN1)
+  
+  cells_bioma <- cells_sf %>%
+      mutate(cell_id = row_number()) %>%
+      left_join(
+        st_set_geometry(majoritario, NULL),
+        by = "cell_id"
+      ) %>%
+      dplyr::select(-cell_id)
+  
+  cells_bioma$CD_LEGEN1 <- 
+      iconv(cells_bioma$CD_LEGEN1, from = "latin1", to = "UTF-8")
+  
+  cells_bioma <- cells_bioma %>%
+      mutate(CD_LEGEN1 = factor(CD_LEGEN1,
+                              levels = sort(unique(CD_LEGEN1))))
+  
+  #vmax <- max(cells_bioma$value, na.rm = TRUE)
+  vmax<-0.2
+  mean_area<-0.5*vmax
+  myplot<-ggplot() +
+    geom_sf(data=cells_bioma, aes(fill = value), color=NA) +
+    geom_sf(data = biomes, fill = NA, color = "gray", size = 0.6) +
+    scale_fill_gradient2(
+      low     = "white",        
+      mid     = "orange",       
+      high    = "darkred",        
+      midpoint= mean_area,
+      na.value= "grey",
+      name     = "", 
+      limits    = c(0, vmax),
+      oob    = squish,
+    ) +
+    labs(
+      title = "Soybean",
+      subtitle = y,
+      caption  = "Source: MAgPIE Default",
+    ) +
+    
+    theme_minimal() +
+    theme(
+      panel.background = element_rect(fill = "grey90", colour = NA),
+      panel.grid.major  = element_line(colour = "white")
+    ) +
+    theme(
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    ) +
+    guides(fill = guide_colorbar(
+      barwidth      = unit(0.6, "cm"),
+      barheight     = unit(2.5,   "cm"),
+    )) +
+    theme(
+      plot.title        = element_text(size = 12, face = "bold"),
+      plot.subtitle     = element_text(size = 11),
+      plot.caption      = element_text(size = 11),
+      legend.key.height = unit(1.2, "cm"),
+      legend.key.width  = unit(0.5, "cm"),
+      legend.text       = element_text(size = 11),
+      panel.grid.major  = element_line(size = 0.5),
+      panel.grid.minor  = element_line(size = 0.25)
+    )
+    plots<-append(plots, list(myplot))
+}
+wrap_plots(plots, nrow=1)
+```
+
+Regarding production, the table below present the results. According to PAM/IBGE, soybean production increased over the years, a trend that was also captured by the model outputs. Nevertheless, the outputs showed a positive deviation in 2010 and negative deviations in 2015 and 2020, indicating that actual production exceeded the model estimates in the latter years.
+
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+prod_soybean_pam <- c(68.76,97.46,121.82)
+prod_soybean_mag <- c(76.49,86.52,92.22)
+
+erro <- (prod_soybean_mag - prod_soybean_pam)/prod_soybean_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = prod_soybean_pam,
+  "MAgPIE (Default)" = prod_soybean_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Soybean production (Mt).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mt")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mt, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+Regarding yield, the model results reproduced the same trend observed in the empirical data, namely an increase over the years. This pattern can be observed in table and figure below. Estimation errors remained below 20\%.
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+yield_soybean_pam <- c(2.95,3.03,3.28)
+yield_soybean_mag <- c(2.81,3.15,3.48)
+
+erro <- (yield_soybean_mag - yield_soybean_pam)/yield_soybean_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = yield_soybean_pam,
+  "MAgPIE (Default)" = yield_soybean_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Soybean yields (t/ha).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "t_per_ha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, t_per_ha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+### Maize
+
+Data on harvested area in millions of hectares were also analyzed for maize.  
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+ha_maiz_pam <- c(12.68,15.40,18.25)
+ha_maiz_mag <- c(13.45,14.23,15.13)
+
+erro <- (ha_maiz_mag - ha_maiz_pam)/ha_maiz_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = ha_maiz_pam,
+  "MAgPIE (Default)" = ha_maiz_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Maize harvested area (Mha).")
+```
+
+The results show errors below 18\% across all years, indicating a closer approximation of the total harvested maize area. 
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+
+```{r fig.height=5, fig.width=15, message=FALSE, warning=FALSE}
+
+plots <- list() 
+for (y in years){
+  cropBRA<-crop['BRA',y,'maiz']
+  df<-as.data.frame(cropBRA,rev=2)
+  names(df)<-c("lon","lat","iso","year","crop","w","value")
+  df <- df %>%
+    group_by(lon, lat) %>%
+    summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+  df$area_cell<-calArea(df$lon,df$lat,res=0.5,mha=1)
+  df$newvalues<-df$area_cell*df$value*100 #ha
+  Total_ha=sum(df$newvalues, na.rm = TRUE ) #unit: ha
+  Total_Mha=Total_ha/1e6 #unit: Mha
+
+  BRA<-subset(map, country=='BRA')
+  coords <- strsplit(BRA$cell, "\\.")  
+  mat    <- do.call(rbind, coords) 
+  BRA$lon <- mat[,1]
+  BRA$lat <- mat[,2]
+  BRA$iso <- mat[,3]
+  BRA$lon <- as.numeric(gsub("p", ".", BRA$lon))
+  BRA$lat <- as.numeric(gsub("p", ".", BRA$lat))
+  
+  dfmap <- BRA %>%
+    left_join(df, by = c("lon", "lat"))
+  
+  r <- rasterFromXYZ(cbind(df[,c("lon","lat",
+                                   "value","newvalues")], z=1), 
+                     res = c(min(diff(sort(unique(BRA$lon)))),
+                             min(diff(sort(unique(BRA$lat))))))
+  
+  polys <- rasterToPolygons(r, dissolve = FALSE)
+  
+  crs(polys) <- CRS("+init=EPSG:4326")
+  
+  
+  cells_sf  <- st_as_sf(polys) %>%
+      st_transform(st_crs(biomes))
+  
+  
+  cells_sf  <- st_make_valid(cells_sf)
+    biomes <- st_make_valid(biomes)
+  
+  
+  int_sf <- st_intersection(
+      cells_sf  %>% mutate(cell_id = row_number()),
+      biomes %>% dplyr::select(CD_LEGEN1))
+  
+  
+  int_sf <- int_sf %>%
+      filter(!st_is_empty(.)) %>%
+      st_collection_extract("POLYGON")
+  
+  int_sf <- int_sf %>%
+      mutate(area = st_area(geometry))
+  
+  majoritario <- int_sf %>%
+      group_by(cell_id) %>%
+      slice_max(area, n = 1, with_ties = FALSE) %>%
+      ungroup() %>%
+      dplyr::select(cell_id, CD_LEGEN1)
+  
+  cells_bioma <- cells_sf %>%
+      mutate(cell_id = row_number()) %>%
+      left_join(
+        st_set_geometry(majoritario, NULL),
+        by = "cell_id"
+      ) %>%
+      dplyr::select(-cell_id)
+  
+  cells_bioma$CD_LEGEN1 <- 
+      iconv(cells_bioma$CD_LEGEN1, from = "latin1", to = "UTF-8")
+  
+  cells_bioma <- cells_bioma %>%
+      mutate(CD_LEGEN1 = factor(CD_LEGEN1,
+                              levels = sort(unique(CD_LEGEN1))))
+  
+  #vmax <- max(cells_bioma$value, na.rm = TRUE)
+  vmax<-0.2
+  mean_area<-0.5*vmax
+  myplot<-ggplot() +
+    geom_sf(data=cells_bioma, aes(fill = value), color=NA) +
+    geom_sf(data = biomes, fill = NA, color = "gray", size = 0.6) +
+    scale_fill_gradient2(
+      low     = "white",        
+      mid     = "orange",       
+      high    = "darkred",        
+      midpoint= mean_area,
+      na.value= "grey",
+      name     = "", 
+      limits    = c(0, vmax),
+      oob    = squish ,
+    ) +
+    labs(
+      title = "Maize",
+      subtitle = y,
+      caption  = "Source: MAgPIE Default",
+    ) +
+    
+    theme_minimal() +
+    theme(
+      panel.background = element_rect(fill = "grey90", colour = NA),
+      panel.grid.major  = element_line(colour = "white")
+    ) +
+    theme(
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    ) +
+    guides(fill = guide_colorbar(
+      barwidth      = unit(0.6, "cm"),
+      barheight     = unit(2.5,   "cm"),
+    )) +
+    theme(
+      plot.title        = element_text(size = 12, face = "bold"),
+      plot.subtitle     = element_text(size = 11),
+      plot.caption      = element_text(size = 11),
+      legend.key.height = unit(1.2, "cm"),
+      legend.key.width  = unit(0.5, "cm"),
+      legend.text       = element_text(size = 11),
+      panel.grid.major  = element_line(size = 0.5),
+      panel.grid.minor  = element_line(size = 0.25)
+    )
+    plots<-append(plots, list(myplot))
+}
+wrap_plots(plots, nrow=1)
+```
+
+Table and figure below present the results for maize production. The empirical data indicate an increase over the years, a trend that is also reflected in the model outputs. However, the negative deviation from the model estimates becomes larger over time, with an error of $-0.14\%$ in 2010 Regarding production, the table below present the results. According to PAM/IBGE, soybean production increased over the years, a trend that was also captured by the model outputs. Nevertheless, the outputs showed a positive deviation in 2010 and negative deviations in 2015 and 2020, indicating that actual production exceeded the model estimates in the latter years.
+
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+prod_maiz_pam <- c(55.68,85.32,103.99)
+prod_maiz_mag <- c(55.60,63.46,75.16)
+
+erro <- (prod_maiz_mag - prod_maiz_pam)/prod_maiz_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = prod_maiz_pam,
+  "MAgPIE (Default)" = prod_maiz_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Maize production (Mt).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mt")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mt, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+Table and figure below present the results for maize yield. In all three years, the yields estimated by the model are lower than the observed values; however, the estimation errors remain below 20\% in every case.
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+yield_maiz_pam <- c(4.37,5.54,5.70)
+yield_maiz_mag <- c(4.13,4.46,4.97)
+
+erro <- (yield_maiz_mag - yield_maiz_pam)/yield_maiz_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = yield_maiz_pam,
+  "MAgPIE (Default)" = yield_maiz_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Maize yields (t/ha).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "t_per_ha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, t_per_ha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+### Sugarcane
+
+The total harvested area of sugarcane for the years 2010, 2015, and 2020 is presented below.   
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+
+ha_sugrcane_pam <- c(9.08,10.10,9.97)
+ha_sugrcane_mag <- c(5.07,4.41,4.12)
+
+erro <- (ha_sugrcane_mag - ha_sugrcane_pam)/ha_sugrcane_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = ha_sugrcane_pam,
+  "MAgPIE (Default)" = ha_sugrcane_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Sugarcane harvested area (Mha).")
+```
+
+The results show that MAgPIE’s estimates are substantially lower than the PAM/IBGE data, accounting for approximately half of the reported harvested area. 
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+
+```{r fig.height=5, fig.width=15, message=FALSE, warning=FALSE}
+
+plots <- list() 
+for (y in years){
+  cropBRA<-crop['BRA',y,'sugr_cane']
+  df<-as.data.frame(cropBRA,rev=2)
+  names(df)<-c("lon","lat","iso","year","crop","w","value")
+  df <- df %>%
+    group_by(lon, lat) %>%
+    summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+  df$area_cell<-calArea(df$lon,df$lat,res=0.5,mha=1)
+  df$newvalues<-df$area_cell*df$value*100 #ha
+  Total_ha=sum(df$newvalues, na.rm = TRUE ) #unit: ha
+  Total_Mha=Total_ha/1e6 #unit: Mha
+
+  BRA<-subset(map, country=='BRA')
+  coords <- strsplit(BRA$cell, "\\.")  
+  mat    <- do.call(rbind, coords) 
+  BRA$lon <- mat[,1]
+  BRA$lat <- mat[,2]
+  BRA$iso <- mat[,3]
+  BRA$lon <- as.numeric(gsub("p", ".", BRA$lon))
+  BRA$lat <- as.numeric(gsub("p", ".", BRA$lat))
+  
+  dfmap <- BRA %>%
+    left_join(df, by = c("lon", "lat"))
+  
+  r <- rasterFromXYZ(cbind(df[,c("lon","lat",
+                                   "value","newvalues")], z=1), 
+                     res = c(min(diff(sort(unique(BRA$lon)))),
+                             min(diff(sort(unique(BRA$lat))))))
+  
+  polys <- rasterToPolygons(r, dissolve = FALSE)
+  
+  crs(polys) <- CRS("+init=EPSG:4326")
+  
+  
+  cells_sf  <- st_as_sf(polys) %>%
+      st_transform(st_crs(biomes))
+  
+  
+  cells_sf  <- st_make_valid(cells_sf)
+    biomes <- st_make_valid(biomes)
+  
+  
+  int_sf <- st_intersection(
+      cells_sf  %>% mutate(cell_id = row_number()),
+      biomes %>% dplyr::select(CD_LEGEN1))
+  
+  
+  int_sf <- int_sf %>%
+      filter(!st_is_empty(.)) %>%
+      st_collection_extract("POLYGON")
+  
+  int_sf <- int_sf %>%
+      mutate(area = st_area(geometry))
+  
+  majoritario <- int_sf %>%
+      group_by(cell_id) %>%
+      slice_max(area, n = 1, with_ties = FALSE) %>%
+      ungroup() %>%
+      dplyr::select(cell_id, CD_LEGEN1)
+  
+  cells_bioma <- cells_sf %>%
+      mutate(cell_id = row_number()) %>%
+      left_join(
+        st_set_geometry(majoritario, NULL),
+        by = "cell_id"
+      ) %>%
+      dplyr::select(-cell_id)
+  
+  cells_bioma$CD_LEGEN1 <- 
+      iconv(cells_bioma$CD_LEGEN1, from = "latin1", to = "UTF-8")
+  
+  cells_bioma <- cells_bioma %>%
+      mutate(CD_LEGEN1 = factor(CD_LEGEN1,
+                              levels = sort(unique(CD_LEGEN1))))
+  
+  #vmax <- max(cells_bioma$value, na.rm = TRUE)
+  vmax<-0.2
+  mean_area<-0.5*vmax
+  myplot<-ggplot() +
+    geom_sf(data=cells_bioma, aes(fill = value), color=NA) +
+    geom_sf(data = biomes, fill = NA, color = "gray", size = 0.6) +
+    scale_fill_gradient2(
+      low     = "white",        
+      mid     = "orange",       
+      high    = "darkred",        
+      midpoint= mean_area,
+      na.value= "grey",
+      name     = "", 
+      limits    = c(0, vmax),
+      oob    = squish ,
+    ) +
+    labs(
+      title = "Sugarcane",
+      subtitle = y,
+      caption  = "Source: MAgPIE Default",
+    ) +
+    
+    theme_minimal() +
+    theme(
+      panel.background = element_rect(fill = "grey90", colour = NA),
+      panel.grid.major  = element_line(colour = "white")
+    ) +
+    theme(
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    ) +
+    guides(fill = guide_colorbar(
+      barwidth      = unit(0.6, "cm"),
+      barheight     = unit(2.5,   "cm"),
+    )) +
+    theme(
+      plot.title        = element_text(size = 12, face = "bold"),
+      plot.subtitle     = element_text(size = 11),
+      plot.caption      = element_text(size = 11),
+      legend.key.height = unit(1.2, "cm"),
+      legend.key.width  = unit(0.5, "cm"),
+      legend.text       = element_text(size = 11),
+      panel.grid.major  = element_line(size = 0.5),
+      panel.grid.minor  = element_line(size = 0.25)
+    )
+    plots<-append(plots, list(myplot))
+}
+wrap_plots(plots, nrow=1)
+```
+
+Since the harvested area of sugarcane estimated by the model was significantly smaller than that reported in the observed data, this discrepancy also affected production, as shown in table and figure below. Although the model outputs are lower than the observed values, the associated errors are around $20\%$, indicating smaller deviations compared to those related to harvested area. 
+
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+prod_sugrcane_pam <- c(717.46,750.29,756.07)
+prod_sugrcane_mag <- c(609.30,587.47,614.52)
+
+erro <- (prod_sugrcane_mag - prod_sugrcane_pam)/prod_sugrcane_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = prod_sugrcane_pam,
+  "MAgPIE (Default)" = prod_sugrcane_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Sugar cane production (Mt).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mt")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mt, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+Due to the data presented, the yield of this crop estimated by MAgPIE was significantly higher than the observed values, with positive deviations ranging from $+52.05\%$ in 2010 to $+97.59\%$ in 2020. These results are shown below. 
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+yield_sugrcane_pam <- c(79.04,74.20,75.64)
+yield_sugrcane_mag <- c(120.18,133.21,149.16)
+
+erro <- (yield_sugrcane_mag - yield_sugrcane_pam)/yield_sugrcane_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = yield_sugrcane_pam,
+  "MAgPIE (Default)" = yield_sugrcane_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Sugar cane yields (t/ha).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "t_per_ha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, t_per_ha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+### Cotton
+
+The total harvested area of cotton for the years 2010, 2015, and 2020 is presented below.   
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+ha_cotton_pam <- c(0.83,1.03,1.63)
+ha_cotton_mag <- c(0.48,0.33,0.23)
+
+erro <- (ha_cotton_mag - ha_cotton_pam)/ha_cotton_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = ha_cotton_pam,
+  "MAgPIE (Default)" = ha_cotton_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Cotton harvested area (Mha).")
+```
+
+For cotton, MAgPIE systematically underestimates harvested area relative to PAM/IBGE across the 2010–2020 period. While official statistics show a clear expansion of cultivated area, particularly in the Cerrado biome, model outputs suggest a progressive decline, with errors reaching nearly $-86\%$ by 2020. 
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+
+```{r fig.height=5, fig.width=15, message=FALSE, warning=FALSE}
+
+plots <- list() 
+for (y in years){
+  cropBRA<-crop['BRA',y,'cottn_pro']
+  df<-as.data.frame(cropBRA,rev=2)
+  names(df)<-c("lon","lat","iso","year","crop","w","value")
+  df <- df %>%
+    group_by(lon, lat) %>%
+    summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+  df$area_cell<-calArea(df$lon,df$lat,res=0.5,mha=1)
+  df$newvalues<-df$area_cell*df$value*100 #ha
+  Total_ha=sum(df$newvalues, na.rm = TRUE ) #unit: ha
+  Total_Mha=Total_ha/1e6 #unit: Mha
+
+  BRA<-subset(map, country=='BRA')
+  coords <- strsplit(BRA$cell, "\\.")  
+  mat    <- do.call(rbind, coords) 
+  BRA$lon <- mat[,1]
+  BRA$lat <- mat[,2]
+  BRA$iso <- mat[,3]
+  BRA$lon <- as.numeric(gsub("p", ".", BRA$lon))
+  BRA$lat <- as.numeric(gsub("p", ".", BRA$lat))
+  
+  dfmap <- BRA %>%
+    left_join(df, by = c("lon", "lat"))
+  
+  r <- rasterFromXYZ(cbind(df[,c("lon","lat",
+                                   "value","newvalues")], z=1), 
+                     res = c(min(diff(sort(unique(BRA$lon)))),
+                             min(diff(sort(unique(BRA$lat))))))
+  
+  polys <- rasterToPolygons(r, dissolve = FALSE)
+  
+  crs(polys) <- CRS("+init=EPSG:4326")
+  
+  
+  cells_sf  <- st_as_sf(polys) %>%
+      st_transform(st_crs(biomes))
+  
+  
+  cells_sf  <- st_make_valid(cells_sf)
+    biomes <- st_make_valid(biomes)
+  
+  
+  int_sf <- st_intersection(
+      cells_sf  %>% mutate(cell_id = row_number()),
+      biomes %>% dplyr::select(CD_LEGEN1))
+  
+  
+  int_sf <- int_sf %>%
+      filter(!st_is_empty(.)) %>%
+      st_collection_extract("POLYGON")
+  
+  int_sf <- int_sf %>%
+      mutate(area = st_area(geometry))
+  
+  majoritario <- int_sf %>%
+      group_by(cell_id) %>%
+      slice_max(area, n = 1, with_ties = FALSE) %>%
+      ungroup() %>%
+      dplyr::select(cell_id, CD_LEGEN1)
+  
+  cells_bioma <- cells_sf %>%
+      mutate(cell_id = row_number()) %>%
+      left_join(
+        st_set_geometry(majoritario, NULL),
+        by = "cell_id"
+      ) %>%
+      dplyr::select(-cell_id)
+  
+  cells_bioma$CD_LEGEN1 <- 
+      iconv(cells_bioma$CD_LEGEN1, from = "latin1", to = "UTF-8")
+  
+  cells_bioma <- cells_bioma %>%
+      mutate(CD_LEGEN1 = factor(CD_LEGEN1,
+                              levels = sort(unique(CD_LEGEN1))))
+  
+  #vmax <- max(cells_bioma$value, na.rm = TRUE)
+  vmax<-0.03
+  mean_area<-0.5*vmax
+  myplot<-ggplot() +
+    geom_sf(data=cells_bioma, aes(fill = value), color=NA) +
+    geom_sf(data = biomes, fill = NA, color = "gray", size = 0.6) +
+    scale_fill_gradient2(
+      low     = "white",        
+      mid     = "orange",       
+      high    = "darkred",        
+      midpoint= mean_area,
+      na.value= "grey",
+      name     = "", 
+      limits    = c(0, vmax),
+      oob    = squish ,
+    ) +
+    labs(
+      title = "Cotton",
+      subtitle = y,
+      caption  = "Source: MAgPIE Default",
+    ) +
+    
+    theme_minimal() +
+    theme(
+      panel.background = element_rect(fill = "grey90", colour = NA),
+      panel.grid.major  = element_line(colour = "white")
+    ) +
+    theme(
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    ) +
+    guides(fill = guide_colorbar(
+      barwidth      = unit(0.6, "cm"),
+      barheight     = unit(2.5,   "cm"),
+    )) +
+    theme(
+      plot.title        = element_text(size = 12, face = "bold"),
+      plot.subtitle     = element_text(size = 11),
+      plot.caption      = element_text(size = 11),
+      legend.key.height = unit(1.2, "cm"),
+      legend.key.width  = unit(0.5, "cm"),
+      legend.text       = element_text(size = 11),
+      panel.grid.major  = element_line(size = 0.5),
+      panel.grid.minor  = element_line(size = 0.25)
+    )
+    plots<-append(plots, list(myplot))
+}
+wrap_plots(plots, nrow=1)
+```
+
+Table and figure below present the results for cotton production. The model estimates are lower than the observed values in all three years, with the negative deviation reaching $-92.63\%$ in 2020.
+
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+prod_cottn_pam <- c(1.66,4.00,7.06)
+prod_cottn_mag <- c(0.85,0.65,0.52)
+
+erro <- (prod_cottn_mag - prod_cottn_pam)/prod_cottn_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = prod_cottn_pam,
+  "MAgPIE (Default)" = prod_cottn_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Cotton production (Mt).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mt")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mt, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+Table and figure below present the results for cotton yield. In all cases, the yields estimated by the model are lower than the observed values, with negative deviations of $-11.50\%$ in 2010, $-49.23\%$ in 2015, and $-47.81\%$ in 2020.
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+yield_cottn_pam <- c(2.00,3.88,4.33)
+yield_cottn_mag <- c(1.77,1.97,2.26)
+
+erro <- (yield_cottn_mag - yield_cottn_pam)/yield_cottn_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = yield_cottn_pam,
+  "MAgPIE (Default)" = yield_cottn_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Cotton yields (t/ha).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "t_per_ha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, t_per_ha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+### Beans (pulses)
+
+The total harvested area of beans for the years 2010, 2015, and 2020 is presented below.   
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+
+ha_beans_pam <- c(3.42,2.87,2.69)
+ha_puls_mag <- c(1.1,0.83,0.73)
+
+erro <- (ha_puls_mag - ha_beans_pam)/ha_beans_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE (Beans)" = ha_beans_pam,
+  "MAgPIE (Default)" = ha_puls_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Beans (pulses) harvested area (Mha).")
+```
+
+Across all three reference years, the model strongly underestimates harvested area, with deviations of more than $-67\%$. While official data indicate a gradual decline in cultivated area between 2010 and 2020, MAgPIE projects substantially smaller values from the outset, failing to reproduce the actual scale of bean cultivation in Brazil. 
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE (Beans)" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+
+```{r fig.height=5, fig.width=15, message=FALSE, warning=FALSE}
+
+plots <- list() 
+for (y in years){
+  cropBRA<-crop['BRA',y,'puls_pro']
+  df<-as.data.frame(cropBRA,rev=2)
+  names(df)<-c("lon","lat","iso","year","crop","w","value")
+  df <- df %>%
+    group_by(lon, lat) %>%
+    summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+  df$area_cell<-calArea(df$lon,df$lat,res=0.5,mha=1)
+  df$newvalues<-df$area_cell*df$value*100 #ha
+  Total_ha=sum(df$newvalues, na.rm = TRUE ) #unit: ha
+  Total_Mha=Total_ha/1e6 #unit: Mha
+
+  BRA<-subset(map, country=='BRA')
+  coords <- strsplit(BRA$cell, "\\.")  
+  mat    <- do.call(rbind, coords) 
+  BRA$lon <- mat[,1]
+  BRA$lat <- mat[,2]
+  BRA$iso <- mat[,3]
+  BRA$lon <- as.numeric(gsub("p", ".", BRA$lon))
+  BRA$lat <- as.numeric(gsub("p", ".", BRA$lat))
+  
+  dfmap <- BRA %>%
+    left_join(df, by = c("lon", "lat"))
+  
+  r <- rasterFromXYZ(cbind(df[,c("lon","lat",
+                                   "value","newvalues")], z=1), 
+                     res = c(min(diff(sort(unique(BRA$lon)))),
+                             min(diff(sort(unique(BRA$lat))))))
+  
+  polys <- rasterToPolygons(r, dissolve = FALSE)
+  
+  crs(polys) <- CRS("+init=EPSG:4326")
+  
+  
+  cells_sf  <- st_as_sf(polys) %>%
+      st_transform(st_crs(biomes))
+  
+  
+  cells_sf  <- st_make_valid(cells_sf)
+    biomes <- st_make_valid(biomes)
+  
+  
+  int_sf <- st_intersection(
+      cells_sf  %>% mutate(cell_id = row_number()),
+      biomes %>% dplyr::select(CD_LEGEN1))
+  
+  
+  int_sf <- int_sf %>%
+      filter(!st_is_empty(.)) %>%
+      st_collection_extract("POLYGON")
+  
+  int_sf <- int_sf %>%
+      mutate(area = st_area(geometry))
+  
+  majoritario <- int_sf %>%
+      group_by(cell_id) %>%
+      slice_max(area, n = 1, with_ties = FALSE) %>%
+      ungroup() %>%
+      dplyr::select(cell_id, CD_LEGEN1)
+  
+  cells_bioma <- cells_sf %>%
+      mutate(cell_id = row_number()) %>%
+      left_join(
+        st_set_geometry(majoritario, NULL),
+        by = "cell_id"
+      ) %>%
+      dplyr::select(-cell_id)
+  
+  cells_bioma$CD_LEGEN1 <- 
+      iconv(cells_bioma$CD_LEGEN1, from = "latin1", to = "UTF-8")
+  
+  cells_bioma <- cells_bioma %>%
+      mutate(CD_LEGEN1 = factor(CD_LEGEN1,
+                              levels = sort(unique(CD_LEGEN1))))
+  
+  #vmax <- max(cells_bioma$value, na.rm = TRUE)
+  vmax<-0.03
+  mean_area<-0.5*vmax
+  myplot<-ggplot() +
+    geom_sf(data=cells_bioma, aes(fill = value), color=NA) +
+    geom_sf(data = biomes, fill = NA, color = "gray", size = 0.6) +
+    scale_fill_gradient2(
+      low     = "white",        
+      mid     = "orange",       
+      high    = "darkred",        
+      midpoint= mean_area,
+      na.value= "grey",
+      name     = "", 
+      limits    = c(0, vmax),
+      oob    = squish ,
+    ) +
+    labs(
+      title = "Pulses",
+      subtitle = y,
+      caption  = "Source: MAgPIE Default",
+    ) +
+    
+    theme_minimal() +
+    theme(
+      panel.background = element_rect(fill = "grey90", colour = NA),
+      panel.grid.major  = element_line(colour = "white")
+    ) +
+    theme(
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    ) +
+    guides(fill = guide_colorbar(
+      barwidth      = unit(0.6, "cm"),
+      barheight     = unit(2.5,   "cm"),
+    )) +
+    theme(
+      plot.title        = element_text(size = 12, face = "bold"),
+      plot.subtitle     = element_text(size = 11),
+      plot.caption      = element_text(size = 11),
+      legend.key.height = unit(1.2, "cm"),
+      legend.key.width  = unit(0.5, "cm"),
+      legend.text       = element_text(size = 11),
+      panel.grid.major  = element_line(size = 0.5),
+      panel.grid.minor  = element_line(size = 0.25)
+    )
+    plots<-append(plots, list(myplot))
+}
+wrap_plots(plots, nrow=1)
+```
+
+Despite the low estimated harvested area, the model's production estimates closely matched the observed values, with deviations remaining below $5\%$.
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+prod_beans_pam <- c(3.15,3.10,3.04)
+prod_puls_mag <- c(3.26,3.24,3.08)
+
+erro <- (prod_puls_mag - prod_beans_pam)/prod_beans_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = prod_beans_pam,
+  "MAgPIE (Default)" = prod_puls_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Beans (pulses) production (Mt).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mt")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mt, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+Regarding yields, the model produced higher values compared to the observed data, due to the smaller harvested area, with deviations exceeding $220\%$.
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+yield_beans_pam <- c(0.92,1.08,1.13)
+yield_puls_mag <- c(2.96,4.02,4.22)
+
+erro <- (yield_puls_mag - yield_beans_pam)/yield_beans_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = yield_beans_pam,
+  "MAgPIE (Default)" = yield_puls_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Beans (pulses) yields (t/ha).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "t_per_ha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, t_per_ha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+### Wheat (temperate cereals)
+
+The total harvested area of wheat for the years 2010, 2015, and 2020 is presented below.   
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+
+ha_wheat_pam <- c(2.18,2.47, 2.43)
+ha_tece_mag <- c(0.89,1.17,1.38)
+
+erro <- (ha_tece_mag - ha_wheat_pam)/ha_wheat_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE (Wheat)" = ha_wheat_pam,
+  "MAgPIE (Default)" = ha_tece_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Wheat (temperate cereals) harvested area (Mha).")
+```
+
+The validation results show that MAgPIE substantially underestimates wheat harvested area throughout the 2010–2020 period. While PAM/IBGE reports relatively stable areas above $2$ Mha, model outputs remain below $1.4$ Mha, with errors exceeding $-40\%$.
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE (Wheat)" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+
+```{r fig.height=5, fig.width=15, message=FALSE, warning=FALSE}
+
+plots <- list() 
+for (y in years){
+  cropBRA<-crop['BRA',y,'tece']
+  df<-as.data.frame(cropBRA,rev=2)
+  names(df)<-c("lon","lat","iso","year","crop","w","value")
+  df <- df %>%
+    group_by(lon, lat) %>%
+    summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+  df$area_cell<-calArea(df$lon,df$lat,res=0.5,mha=1)
+  df$newvalues<-df$area_cell*df$value*100 #ha
+  Total_ha=sum(df$newvalues, na.rm = TRUE ) #unit: ha
+  Total_Mha=Total_ha/1e6 #unit: Mha
+
+  BRA<-subset(map, country=='BRA')
+  coords <- strsplit(BRA$cell, "\\.")  
+  mat    <- do.call(rbind, coords) 
+  BRA$lon <- mat[,1]
+  BRA$lat <- mat[,2]
+  BRA$iso <- mat[,3]
+  BRA$lon <- as.numeric(gsub("p", ".", BRA$lon))
+  BRA$lat <- as.numeric(gsub("p", ".", BRA$lat))
+  
+  dfmap <- BRA %>%
+    left_join(df, by = c("lon", "lat"))
+  
+  r <- rasterFromXYZ(cbind(df[,c("lon","lat",
+                                   "value","newvalues")], z=1), 
+                     res = c(min(diff(sort(unique(BRA$lon)))),
+                             min(diff(sort(unique(BRA$lat))))))
+  
+  polys <- rasterToPolygons(r, dissolve = FALSE)
+  
+  crs(polys) <- CRS("+init=EPSG:4326")
+  
+  
+  cells_sf  <- st_as_sf(polys) %>%
+      st_transform(st_crs(biomes))
+  
+  
+  cells_sf  <- st_make_valid(cells_sf)
+    biomes <- st_make_valid(biomes)
+  
+  
+  int_sf <- st_intersection(
+      cells_sf  %>% mutate(cell_id = row_number()),
+      biomes %>% dplyr::select(CD_LEGEN1))
+  
+  
+  int_sf <- int_sf %>%
+      filter(!st_is_empty(.)) %>%
+      st_collection_extract("POLYGON")
+  
+  int_sf <- int_sf %>%
+      mutate(area = st_area(geometry))
+  
+  majoritario <- int_sf %>%
+      group_by(cell_id) %>%
+      slice_max(area, n = 1, with_ties = FALSE) %>%
+      ungroup() %>%
+      dplyr::select(cell_id, CD_LEGEN1)
+  
+  cells_bioma <- cells_sf %>%
+      mutate(cell_id = row_number()) %>%
+      left_join(
+        st_set_geometry(majoritario, NULL),
+        by = "cell_id"
+      ) %>%
+      dplyr::select(-cell_id)
+  
+  cells_bioma$CD_LEGEN1 <- 
+      iconv(cells_bioma$CD_LEGEN1, from = "latin1", to = "UTF-8")
+  
+  cells_bioma <- cells_bioma %>%
+      mutate(CD_LEGEN1 = factor(CD_LEGEN1,
+                              levels = sort(unique(CD_LEGEN1))))
+  
+  #vmax <- max(cells_bioma$value, na.rm = TRUE)
+  vmax<-0.06
+  mean_area<-0.5*vmax
+  myplot<-ggplot() +
+    geom_sf(data=cells_bioma, aes(fill = value), color=NA) +
+    geom_sf(data = biomes, fill = NA, color = "gray", size = 0.6) +
+    scale_fill_gradient2(
+      low     = "white",        
+      mid     = "orange",       
+      high    = "darkred",        
+      midpoint= mean_area,
+      na.value= "grey",
+      name     = "", 
+      limits    = c(0, vmax),
+      oob    = squish ,
+    ) +
+    labs(
+      title = "Temperate cereals",
+      subtitle = y,
+      caption  = "Source: MAgPIE Default",
+    ) +
+    
+    theme_minimal() +
+    theme(
+      panel.background = element_rect(fill = "grey90", colour = NA),
+      panel.grid.major  = element_line(colour = "white")
+    ) +
+    theme(
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    ) +
+    guides(fill = guide_colorbar(
+      barwidth      = unit(0.6, "cm"),
+      barheight     = unit(2.5,   "cm"),
+    )) +
+    theme(
+      plot.title        = element_text(size = 12, face = "bold"),
+      plot.subtitle     = element_text(size = 11),
+      plot.caption      = element_text(size = 11),
+      legend.key.height = unit(1.2, "cm"),
+      legend.key.width  = unit(0.5, "cm"),
+      legend.text       = element_text(size = 11),
+      panel.grid.major  = element_line(size = 0.5),
+      panel.grid.minor  = element_line(size = 0.25)
+    )
+    plots<-append(plots, list(myplot))
+}
+wrap_plots(plots, nrow=1)
+```
+
+Despite the smaller cultivated areas estimated by the model, the production of this crop is higher than the observed values in 2015 and 2020, with positive deviations below $20\%$ in both years. These results are presented below. 
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+prod_tece_pam <- c(6.17,5.51,6.34)
+prod_tece_mag <- c(5.55,6.53,7.51)
+
+erro <- (prod_tece_mag - prod_tece_pam)/prod_tece_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = prod_tece_pam,
+  "MAgPIE (Default)" = prod_tece_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Wheat (temperate cereals) production (Mt).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mt")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mt, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+Yields estimated by the model for this crop is significantly higher than the observed values, with positive deviations exceeding $100\%$ in all cases.
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+yield_tece_pam <- c(2.83,2.23,2.61)
+yield_tece_mag <- c(6.24,5.58,5.44)
+
+erro <- (yield_tece_mag - yield_tece_pam)/yield_tece_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = yield_tece_pam,
+  "MAgPIE (Default)" = yield_tece_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Wheat (temperate cereals) yields (t/ha).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "t_per_ha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, t_per_ha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+### Potato
+
+The total harvested area of potato for the years 2010, 2015, and 2020 is presented below.   
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+
+ha_potato_pam <- c(0.14, 0.13, 0.12)
+ha_potato_mag <- c(0.18, 0.12, 0.09)
+
+erro <- (ha_potato_mag - ha_potato_pam)/ha_potato_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = ha_potato_pam,
+  "MAgPIE (Default)" = ha_potato_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Potato harvested area (Mha).")
+```
+
+In 2010, MAgPIE outputs overestimated the harvested area compared to PAM/IBGE data. However, a different pattern is observed in the following years. In 2015, MAgPIE estimates fell below the official data, with an error of $-7.69\%$. By 2020, this discrepancy had further increased, as the model projected even lower values relative to the observed data.
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+
+```{r fig.height=5, fig.width=15, message=FALSE, warning=FALSE}
+
+plots <- list() 
+for (y in years){
+  cropBRA<-crop['BRA',y,'potato']
+  df<-as.data.frame(cropBRA,rev=2)
+  names(df)<-c("lon","lat","iso","year","crop","w","value")
+  df <- df %>%
+    group_by(lon, lat) %>%
+    summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+  df$area_cell<-calArea(df$lon,df$lat,res=0.5,mha=1)
+  df$newvalues<-df$area_cell*df$value*100 #ha
+  Total_ha=sum(df$newvalues, na.rm = TRUE ) #unit: ha
+  Total_Mha=Total_ha/1e6 #unit: Mha
+
+  BRA<-subset(map, country=='BRA')
+  coords <- strsplit(BRA$cell, "\\.")  
+  mat    <- do.call(rbind, coords) 
+  BRA$lon <- mat[,1]
+  BRA$lat <- mat[,2]
+  BRA$iso <- mat[,3]
+  BRA$lon <- as.numeric(gsub("p", ".", BRA$lon))
+  BRA$lat <- as.numeric(gsub("p", ".", BRA$lat))
+  
+  dfmap <- BRA %>%
+    left_join(df, by = c("lon", "lat"))
+  
+  r <- rasterFromXYZ(cbind(df[,c("lon","lat",
+                                   "value","newvalues")], z=1), 
+                     res = c(min(diff(sort(unique(BRA$lon)))),
+                             min(diff(sort(unique(BRA$lat))))))
+  
+  polys <- rasterToPolygons(r, dissolve = FALSE)
+  
+  crs(polys) <- CRS("+init=EPSG:4326")
+  
+  
+  cells_sf  <- st_as_sf(polys) %>%
+      st_transform(st_crs(biomes))
+  
+  
+  cells_sf  <- st_make_valid(cells_sf)
+    biomes <- st_make_valid(biomes)
+  
+  
+  int_sf <- st_intersection(
+      cells_sf  %>% mutate(cell_id = row_number()),
+      biomes %>% dplyr::select(CD_LEGEN1))
+  
+  
+  int_sf <- int_sf %>%
+      filter(!st_is_empty(.)) %>%
+      st_collection_extract("POLYGON")
+  
+  int_sf <- int_sf %>%
+      mutate(area = st_area(geometry))
+  
+  majoritario <- int_sf %>%
+      group_by(cell_id) %>%
+      slice_max(area, n = 1, with_ties = FALSE) %>%
+      ungroup() %>%
+      dplyr::select(cell_id, CD_LEGEN1)
+  
+  cells_bioma <- cells_sf %>%
+      mutate(cell_id = row_number()) %>%
+      left_join(
+        st_set_geometry(majoritario, NULL),
+        by = "cell_id"
+      ) %>%
+      dplyr::select(-cell_id)
+  
+  cells_bioma$CD_LEGEN1 <- 
+      iconv(cells_bioma$CD_LEGEN1, from = "latin1", to = "UTF-8")
+  
+  cells_bioma <- cells_bioma %>%
+      mutate(CD_LEGEN1 = factor(CD_LEGEN1,
+                              levels = sort(unique(CD_LEGEN1))))
+  
+  #vmax <- max(cells_bioma$value, na.rm = TRUE)
+  vmax<-0.006
+  mean_area<-0.5*vmax
+  myplot<-ggplot() +
+    geom_sf(data=cells_bioma, aes(fill = value), color=NA) +
+    geom_sf(data = biomes, fill = NA, color = "gray", size = 0.6) +
+    scale_fill_gradient2(
+      low     = "white",        
+      mid     = "orange",       
+      high    = "darkred",        
+      midpoint= mean_area,
+      na.value= "grey",
+      name     = "", 
+      limits    = c(0, vmax),
+      oob    = squish ,
+    ) +
+    labs(
+      title = "Potato",
+      subtitle = y,
+      caption  = "Source: MAgPIE Default",
+    ) +
+    
+    theme_minimal() +
+    theme(
+      panel.background = element_rect(fill = "grey90", colour = NA),
+      panel.grid.major  = element_line(colour = "white")
+    ) +
+    theme(
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    ) +
+    guides(fill = guide_colorbar(
+      barwidth      = unit(0.6, "cm"),
+      barheight     = unit(2.5,   "cm"),
+    )) +
+    theme(
+      plot.title        = element_text(size = 12, face = "bold"),
+      plot.subtitle     = element_text(size = 11),
+      plot.caption      = element_text(size = 11),
+      legend.key.height = unit(1.2, "cm"),
+      legend.key.width  = unit(0.5, "cm"),
+      legend.text       = element_text(size = 11),
+      panel.grid.major  = element_line(size = 0.5),
+      panel.grid.minor  = element_line(size = 0.25)
+    )
+    plots<-append(plots, list(myplot))
+}
+wrap_plots(plots, nrow=1)
+```
+
+Despite the negative deviations associated with harvested area in 2015 and 2020, the model estimates were higher than the observed values for production for all three years analyzed. These results are presented below, with positive deviations exceeding $150\%$ in all cases.
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+prod_potato_pam <- c(3.55,3.87,3.75)
+prod_potato_mag <- c(9.70,9.79,10.73)
+
+erro <- (prod_potato_mag - prod_potato_pam)/prod_potato_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = prod_potato_pam,
+  "MAgPIE (Default)" = prod_potato_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Potato production (Mt).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mt")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mt, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+This pattern observed in production is reflected in the yield results presented below. All model-estimated values exceed the official PAM/IBGE data, with deviations remaining above $100\%$ in all cases.
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+yield_potato_pam <- c(25.89, 29.32, 32.01)
+yield_potato_mag <- c(53.89,81.58,119.22)
+
+erro <- (yield_potato_mag - yield_potato_pam)/yield_potato_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = yield_potato_pam,
+  "MAgPIE (Default)" = yield_potato_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Potato yields (t/ha).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "t_per_ha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, t_per_ha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+
+### Rice
+
+The total harvested area of rice for the years 2010, 2015, and 2020 is presented below.   
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+
+ha_rice_pam <- c(2.72,2.14,1.67)
+ha_rice_mag <- c(3.01,2.99,2.44)
+
+erro <- (ha_rice_mag - ha_rice_pam)/ha_rice_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = ha_rice_pam,
+  "MAgPIE (Default)" = ha_rice_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Rice harvested area (Mha).")
+```
+
+For rice, MAgPIE overestimates harvested area when compared with PAM/IBGE data. Across the period 2010–2020, the model projects harvested areas that are $11\%$ to $46\%$ larger than observed.
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+
+```{r fig.height=5, fig.width=15, message=FALSE, warning=FALSE}
+
+plots <- list() 
+for (y in years){
+  cropBRA<-crop['BRA',y,'rice_pro']
+  df<-as.data.frame(cropBRA,rev=2)
+  names(df)<-c("lon","lat","iso","year","crop","w","value")
+  df <- df %>%
+    group_by(lon, lat) %>%
+    summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+  df$area_cell<-calArea(df$lon,df$lat,res=0.5,mha=1)
+  df$newvalues<-df$area_cell*df$value*100 #ha
+  Total_ha=sum(df$newvalues, na.rm = TRUE ) #unit: ha
+  Total_Mha=Total_ha/1e6 #unit: Mha
+
+  BRA<-subset(map, country=='BRA')
+  coords <- strsplit(BRA$cell, "\\.")  
+  mat    <- do.call(rbind, coords) 
+  BRA$lon <- mat[,1]
+  BRA$lat <- mat[,2]
+  BRA$iso <- mat[,3]
+  BRA$lon <- as.numeric(gsub("p", ".", BRA$lon))
+  BRA$lat <- as.numeric(gsub("p", ".", BRA$lat))
+  
+  dfmap <- BRA %>%
+    left_join(df, by = c("lon", "lat"))
+  
+  r <- rasterFromXYZ(cbind(df[,c("lon","lat",
+                                   "value","newvalues")], z=1), 
+                     res = c(min(diff(sort(unique(BRA$lon)))),
+                             min(diff(sort(unique(BRA$lat))))))
+  
+  polys <- rasterToPolygons(r, dissolve = FALSE)
+  
+  crs(polys) <- CRS("+init=EPSG:4326")
+  
+  
+  cells_sf  <- st_as_sf(polys) %>%
+      st_transform(st_crs(biomes))
+  
+  
+  cells_sf  <- st_make_valid(cells_sf)
+    biomes <- st_make_valid(biomes)
+  
+  
+  int_sf <- st_intersection(
+      cells_sf  %>% mutate(cell_id = row_number()),
+      biomes %>% dplyr::select(CD_LEGEN1))
+  
+  
+  int_sf <- int_sf %>%
+      filter(!st_is_empty(.)) %>%
+      st_collection_extract("POLYGON")
+  
+  int_sf <- int_sf %>%
+      mutate(area = st_area(geometry))
+  
+  majoritario <- int_sf %>%
+      group_by(cell_id) %>%
+      slice_max(area, n = 1, with_ties = FALSE) %>%
+      ungroup() %>%
+      dplyr::select(cell_id, CD_LEGEN1)
+  
+  cells_bioma <- cells_sf %>%
+      mutate(cell_id = row_number()) %>%
+      left_join(
+        st_set_geometry(majoritario, NULL),
+        by = "cell_id"
+      ) %>%
+      dplyr::select(-cell_id)
+  
+  cells_bioma$CD_LEGEN1 <- 
+      iconv(cells_bioma$CD_LEGEN1, from = "latin1", to = "UTF-8")
+  
+  cells_bioma <- cells_bioma %>%
+      mutate(CD_LEGEN1 = factor(CD_LEGEN1,
+                              levels = sort(unique(CD_LEGEN1))))
+  
+  #vmax <- max(cells_bioma$value, na.rm = TRUE)
+  vmax<-0.05
+  mean_area<-0.5*vmax
+  myplot<-ggplot() +
+    geom_sf(data=cells_bioma, aes(fill = value), color=NA) +
+    geom_sf(data = biomes, fill = NA, color = "gray", size = 0.6) +
+    scale_fill_gradient2(
+      low     = "white",        
+      mid     = "orange",       
+      high    = "darkred",        
+      midpoint= mean_area,
+      na.value= "grey",
+      name     = "", 
+      limits    = c(0, vmax),
+      oob    = squish ,
+    ) +
+    labs(
+      title = "Rice",
+      subtitle = y,
+      caption  = "Source: MAgPIE Default",
+    ) +
+    
+    theme_minimal() +
+    theme(
+      panel.background = element_rect(fill = "grey90", colour = NA),
+      panel.grid.major  = element_line(colour = "white")
+    ) +
+    theme(
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    ) +
+    guides(fill = guide_colorbar(
+      barwidth      = unit(0.6, "cm"),
+      barheight     = unit(2.5,   "cm"),
+    )) +
+    theme(
+      plot.title        = element_text(size = 12, face = "bold"),
+      plot.subtitle     = element_text(size = 11),
+      plot.caption      = element_text(size = 11),
+      legend.key.height = unit(1.2, "cm"),
+      legend.key.width  = unit(0.5, "cm"),
+      legend.text       = element_text(size = 11),
+      panel.grid.major  = element_line(size = 0.5),
+      panel.grid.minor  = element_line(size = 0.25)
+    )
+    plots<-append(plots, list(myplot))
+}
+wrap_plots(plots, nrow=1)
+```
+
+Following the same pattern observed for harvested area, MAgPIE estimates for rice production exceed the official data, as shown below.
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+prod_rice_pam <- c(11.24,12.30,11.09)
+prod_rice_mag <- c(15.71,17.30,16.86)
+
+erro <- (prod_rice_mag - prod_rice_pam)/prod_rice_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = prod_rice_pam,
+  "MAgPIE (Default)" = prod_rice_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Rice production (Mt).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mt")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mt, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+Table and figure below present the yield data, showing that the model outputs are higher than the observed values. However, the estimation errors are small, particularly in 2015 and 2020, at $+0.70\%$ and $+4.54\%$, 
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+yield_rice_pam <- c(4.13,5.75,6.61)
+yield_rice_mag <- c(5.22,5.79,6.91)
+
+erro <- (yield_rice_mag - yield_rice_pam)/yield_rice_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = yield_rice_pam,
+  "MAgPIE (Default)" = yield_rice_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Rice yields (t/ha).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "t_per_ha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, t_per_ha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+### Groundnut
+
+The total harvested area of groundnut for the years 2010, 2015, and 2020 is presented below.   
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+
+ha_groundnut_pam <- c(0.09,0.15,0.18)
+ha_groundnut_mag <- c(0.06,0.03,0.03)
+
+erro <- (ha_groundnut_mag - ha_groundnut_pam)/ha_groundnut_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = ha_groundnut_pam,
+  "MAgPIE (Default)" = ha_groundnut_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Groundnut harvested area (Mha).")
+```
+
+Although PAM / IBGE data indicate an expansion in the harvested area, MAgPIE estimates suggest a decline in this crop, with deviations reaching $-83.33\%$ in 2020.
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+
+```{r fig.height=5, fig.width=15, message=FALSE, warning=FALSE}
+
+plots <- list() 
+for (y in years){
+  cropBRA<-crop['BRA',y,'groundnut']
+  df<-as.data.frame(cropBRA,rev=2)
+  names(df)<-c("lon","lat","iso","year","crop","w","value")
+  df <- df %>%
+    group_by(lon, lat) %>%
+    summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+  df$area_cell<-calArea(df$lon,df$lat,res=0.5,mha=1)
+  df$newvalues<-df$area_cell*df$value*100 #ha
+  Total_ha=sum(df$newvalues, na.rm = TRUE ) #unit: ha
+  Total_Mha=Total_ha/1e6 #unit: Mha
+
+  BRA<-subset(map, country=='BRA')
+  coords <- strsplit(BRA$cell, "\\.")  
+  mat    <- do.call(rbind, coords) 
+  BRA$lon <- mat[,1]
+  BRA$lat <- mat[,2]
+  BRA$iso <- mat[,3]
+  BRA$lon <- as.numeric(gsub("p", ".", BRA$lon))
+  BRA$lat <- as.numeric(gsub("p", ".", BRA$lat))
+  
+  dfmap <- BRA %>%
+    left_join(df, by = c("lon", "lat"))
+  
+  r <- rasterFromXYZ(cbind(df[,c("lon","lat",
+                                   "value","newvalues")], z=1), 
+                     res = c(min(diff(sort(unique(BRA$lon)))),
+                             min(diff(sort(unique(BRA$lat))))))
+  
+  polys <- rasterToPolygons(r, dissolve = FALSE)
+  
+  crs(polys) <- CRS("+init=EPSG:4326")
+  
+  
+  cells_sf  <- st_as_sf(polys) %>%
+      st_transform(st_crs(biomes))
+  
+  
+  cells_sf  <- st_make_valid(cells_sf)
+    biomes <- st_make_valid(biomes)
+  
+  
+  int_sf <- st_intersection(
+      cells_sf  %>% mutate(cell_id = row_number()),
+      biomes %>% dplyr::select(CD_LEGEN1))
+  
+  
+  int_sf <- int_sf %>%
+      filter(!st_is_empty(.)) %>%
+      st_collection_extract("POLYGON")
+  
+  int_sf <- int_sf %>%
+      mutate(area = st_area(geometry))
+  
+  majoritario <- int_sf %>%
+      group_by(cell_id) %>%
+      slice_max(area, n = 1, with_ties = FALSE) %>%
+      ungroup() %>%
+      dplyr::select(cell_id, CD_LEGEN1)
+  
+  cells_bioma <- cells_sf %>%
+      mutate(cell_id = row_number()) %>%
+      left_join(
+        st_set_geometry(majoritario, NULL),
+        by = "cell_id"
+      ) %>%
+      dplyr::select(-cell_id)
+  
+  cells_bioma$CD_LEGEN1 <- 
+      iconv(cells_bioma$CD_LEGEN1, from = "latin1", to = "UTF-8")
+  
+  cells_bioma <- cells_bioma %>%
+      mutate(CD_LEGEN1 = factor(CD_LEGEN1,
+                              levels = sort(unique(CD_LEGEN1))))
+  
+  #vmax <- max(cells_bioma$value, na.rm = TRUE)
+  vmax<-0.01
+  mean_area<-0.5*vmax
+  myplot<-ggplot() +
+    geom_sf(data=cells_bioma, aes(fill = value), color=NA) +
+    geom_sf(data = biomes, fill = NA, color = "gray", size = 0.6) +
+    scale_fill_gradient2(
+      low     = "white",        
+      mid     = "orange",       
+      high    = "darkred",        
+      midpoint= mean_area,
+      na.value= "grey",
+      name     = "", 
+      limits    = c(0, vmax),
+      oob    = squish ,
+    ) +
+    labs(
+      title = "Groundnut",
+      subtitle = y,
+      caption  = "Source: MAgPIE Default",
+    ) +
+    
+    theme_minimal() +
+    theme(
+      panel.background = element_rect(fill = "grey90", colour = NA),
+      panel.grid.major  = element_line(colour = "white")
+    ) +
+    theme(
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    ) +
+    guides(fill = guide_colorbar(
+      barwidth      = unit(0.6, "cm"),
+      barheight     = unit(2.5,   "cm"),
+    )) +
+    theme(
+      plot.title        = element_text(size = 12, face = "bold"),
+      plot.subtitle     = element_text(size = 11),
+      plot.caption      = element_text(size = 11),
+      legend.key.height = unit(1.2, "cm"),
+      legend.key.width  = unit(0.5, "cm"),
+      legend.text       = element_text(size = 11),
+      panel.grid.major  = element_line(size = 0.5),
+      panel.grid.minor  = element_line(size = 0.25)
+    )
+    plots<-append(plots, list(myplot))
+}
+wrap_plots(plots, nrow=1)
+```
+
+The data for groundnut production are presented below, indicating that the model underestimated values for three years analyzed. The smallest deviation occurred in 2015, $-34\%$,  while the largest was observed in 2020 ($-93.85\%$).
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+prod_groudn_pam <- c(0.26,0.50,0.65)
+prod_groudn_mag <- c(0.07,0.33,0.04)
+
+erro <- (prod_groudn_mag - prod_groudn_pam)/prod_groudn_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = prod_groudn_pam,
+  "MAgPIE (Default)" = prod_groudn_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Groundnut production (Mt).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mt")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mt, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+Table and figure below present the yield values, revealing a distinct pattern in which the model underestimates values in 2010 and 2020, but shows a positive deviation of $225\%$ in 2015. This large deviation corresponds to the year with the highest model-estimated production ($0.33$ Mt), despite a harvested area of only $0.03$ Mha.
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+yield_groundn_pam <- c(2.77,3.38,3.64)
+yield_groundn_mag <- c(1.17,11.0,1.33)
+
+erro <- (yield_groundn_mag - yield_groundn_pam)/yield_groundn_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = yield_groundn_pam,
+  "MAgPIE (Default)" = yield_groundn_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Groundnut yields (t/ha).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "t_per_ha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, t_per_ha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+### Sunflower
+
+The total harvested area of sunflower for the years 2010, 2015, and 2020 is presented below.   
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+
+ha_sunflower_pam <- c(0.08,0.11,0.05)
+ha_sunflower_mag <- c(0.01,0.02,0.02)
+
+erro <- (ha_sunflower_mag - ha_sunflower_pam)/ha_sunflower_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = ha_sunflower_pam,
+  "MAgPIE (Default)" = ha_sunflower_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Sunflower harvested area (Mha).")
+```
+
+The comparison between PAM/IBGE and MAgPIE outputs reveals that sunflower cultivation is strongly underestimated by the model. Across all reference years, the harvested area reported by MAgPIE is considerably smaller than official data, with errors ranging from $-60\%$ to $-88\%$. While PAM/IBGE records show moderate but fluctuating sunflower cultivation in southern Brazil, MAgPIE results suggest a very limited and spatially diffuse allocation, failing to capture the concentration of this crop in specific producing regions.
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+
+```{r fig.height=5, fig.width=15, message=FALSE, warning=FALSE}
+
+plots <- list() 
+for (y in years){
+  cropBRA<-crop['BRA',y,'sunflower']
+  df<-as.data.frame(cropBRA,rev=2)
+  names(df)<-c("lon","lat","iso","year","crop","w","value")
+  df <- df %>%
+    group_by(lon, lat) %>%
+    summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+  df$area_cell<-calArea(df$lon,df$lat,res=0.5,mha=1)
+  df$newvalues<-df$area_cell*df$value*100 #ha
+  Total_ha=sum(df$newvalues, na.rm = TRUE ) #unit: ha
+  Total_Mha=Total_ha/1e6 #unit: Mha
+
+  BRA<-subset(map, country=='BRA')
+  coords <- strsplit(BRA$cell, "\\.")  
+  mat    <- do.call(rbind, coords) 
+  BRA$lon <- mat[,1]
+  BRA$lat <- mat[,2]
+  BRA$iso <- mat[,3]
+  BRA$lon <- as.numeric(gsub("p", ".", BRA$lon))
+  BRA$lat <- as.numeric(gsub("p", ".", BRA$lat))
+  
+  dfmap <- BRA %>%
+    left_join(df, by = c("lon", "lat"))
+  
+  r <- rasterFromXYZ(cbind(df[,c("lon","lat",
+                                   "value","newvalues")], z=1), 
+                     res = c(min(diff(sort(unique(BRA$lon)))),
+                             min(diff(sort(unique(BRA$lat))))))
+  
+  polys <- rasterToPolygons(r, dissolve = FALSE)
+  
+  crs(polys) <- CRS("+init=EPSG:4326")
+  
+  
+  cells_sf  <- st_as_sf(polys) %>%
+      st_transform(st_crs(biomes))
+  
+  
+  cells_sf  <- st_make_valid(cells_sf)
+    biomes <- st_make_valid(biomes)
+  
+  
+  int_sf <- st_intersection(
+      cells_sf  %>% mutate(cell_id = row_number()),
+      biomes %>% dplyr::select(CD_LEGEN1))
+  
+  
+  int_sf <- int_sf %>%
+      filter(!st_is_empty(.)) %>%
+      st_collection_extract("POLYGON")
+  
+  int_sf <- int_sf %>%
+      mutate(area = st_area(geometry))
+  
+  majoritario <- int_sf %>%
+      group_by(cell_id) %>%
+      slice_max(area, n = 1, with_ties = FALSE) %>%
+      ungroup() %>%
+      dplyr::select(cell_id, CD_LEGEN1)
+  
+  cells_bioma <- cells_sf %>%
+      mutate(cell_id = row_number()) %>%
+      left_join(
+        st_set_geometry(majoritario, NULL),
+        by = "cell_id"
+      ) %>%
+      dplyr::select(-cell_id)
+  
+  cells_bioma$CD_LEGEN1 <- 
+      iconv(cells_bioma$CD_LEGEN1, from = "latin1", to = "UTF-8")
+  
+  cells_bioma <- cells_bioma %>%
+      mutate(CD_LEGEN1 = factor(CD_LEGEN1,
+                              levels = sort(unique(CD_LEGEN1))))
+  
+  #vmax <- max(cells_bioma$value, na.rm = TRUE)
+  vmax<-0.006
+  mean_area<-0.5*vmax
+  myplot<-ggplot() +
+    geom_sf(data=cells_bioma, aes(fill = value), color=NA) +
+    geom_sf(data = biomes, fill = NA, color = "gray", size = 0.6) +
+    scale_fill_gradient2(
+      low     = "white",        
+      mid     = "orange",       
+      high    = "darkred",        
+      midpoint= mean_area,
+      na.value= "grey",
+      name     = "", 
+      limits    = c(0, vmax),
+      oob    = squish ,
+    ) +
+    labs(
+      title = "Sunflower",
+      subtitle = y,
+      caption  = "Source: MAgPIE Default",
+    ) +
+    
+    theme_minimal() +
+    theme(
+      panel.background = element_rect(fill = "grey90", colour = NA),
+      panel.grid.major  = element_line(colour = "white")
+    ) +
+    theme(
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    ) +
+    guides(fill = guide_colorbar(
+      barwidth      = unit(0.6, "cm"),
+      barheight     = unit(2.5,   "cm"),
+    )) +
+    theme(
+      plot.title        = element_text(size = 12, face = "bold"),
+      plot.subtitle     = element_text(size = 11),
+      plot.caption      = element_text(size = 11),
+      legend.key.height = unit(1.2, "cm"),
+      legend.key.width  = unit(0.5, "cm"),
+      legend.text       = element_text(size = 11),
+      panel.grid.major  = element_line(size = 0.5),
+      panel.grid.minor  = element_line(size = 0.25)
+    )
+    plots<-append(plots, list(myplot))
+}
+wrap_plots(plots, nrow=1)
+```
+
+Table and figure below present sunflower production values, showing that despite the smaller harvested area compared to official data, production in 2020 exceeded observed values by $50\%$.
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+prod_sunflower_pam <- c(0.09,0.16,0.08)
+prod_sunflower_mag <- c(0.04,0.12,0.12)
+
+erro <- (prod_sunflower_mag - prod_sunflower_pam)/prod_sunflower_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = prod_sunflower_pam,
+  "MAgPIE (Default)" = prod_sunflower_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Sunflower production (Mt).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mt")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mt, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+Regarding yield, all values estimated by MAgPIE exceeded the official data for sunflower.
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+yield_sunflower_pam <- c(2.77,3.38,3.64)
+yield_sunflower_mag <- c(1.17,11.0,1.33)
+
+erro <- (yield_sunflower_mag - yield_sunflower_pam)/yield_sunflower_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = yield_sunflower_pam,
+  "MAgPIE (Default)" = yield_sunflower_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Sunflower yields (t/ha).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "t_per_ha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, t_per_ha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+
+### Cassava
+
+The total harvested area of cassava for the years 2010, 2015, and 2020 is presented below.   
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+
+ha_cassav_pam <- c(1.79,1.51,1.21)
+ha_cassav_mag <- c(4.89,4.71,4.58)
+
+erro <- (ha_cassav_mag - ha_cassav_pam)/ha_cassav_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = ha_cassav_pam,
+  "MAgPIE (Default)" = ha_cassav_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Cassava harvested area (Mha).")
+```
+
+The PAM/IBGE data indicate that cassava has relatively stable harvested areas between 2010 and 2020, but MAgPIE superestimates its cultivation throughout the decade. The discrepancies are evident in the Northeast and central regions, where the official data show a strong concentration of cassava production that is not captured by the model’s allocation.
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+
+```{r fig.height=5, fig.width=15, message=FALSE, warning=FALSE}
+
+plots <- list() 
+for (y in years){
+  cropBRA<-crop['BRA',y,'cassav_sp']
+  df<-as.data.frame(cropBRA,rev=2)
+  names(df)<-c("lon","lat","iso","year","crop","w","value")
+  df <- df %>%
+    group_by(lon, lat) %>%
+    summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+  df$area_cell<-calArea(df$lon,df$lat,res=0.5,mha=1)
+  df$newvalues<-df$area_cell*df$value*100 #ha
+  Total_ha=sum(df$newvalues, na.rm = TRUE ) #unit: ha
+  Total_Mha=Total_ha/1e6 #unit: Mha
+
+  BRA<-subset(map, country=='BRA')
+  coords <- strsplit(BRA$cell, "\\.")  
+  mat    <- do.call(rbind, coords) 
+  BRA$lon <- mat[,1]
+  BRA$lat <- mat[,2]
+  BRA$iso <- mat[,3]
+  BRA$lon <- as.numeric(gsub("p", ".", BRA$lon))
+  BRA$lat <- as.numeric(gsub("p", ".", BRA$lat))
+  
+  dfmap <- BRA %>%
+    left_join(df, by = c("lon", "lat"))
+  
+  r <- rasterFromXYZ(cbind(df[,c("lon","lat",
+                                   "value","newvalues")], z=1), 
+                     res = c(min(diff(sort(unique(BRA$lon)))),
+                             min(diff(sort(unique(BRA$lat))))))
+  
+  polys <- rasterToPolygons(r, dissolve = FALSE)
+  
+  crs(polys) <- CRS("+init=EPSG:4326")
+  
+  
+  cells_sf  <- st_as_sf(polys) %>%
+      st_transform(st_crs(biomes))
+  
+  
+  cells_sf  <- st_make_valid(cells_sf)
+    biomes <- st_make_valid(biomes)
+  
+  
+  int_sf <- st_intersection(
+      cells_sf  %>% mutate(cell_id = row_number()),
+      biomes %>% dplyr::select(CD_LEGEN1))
+  
+  
+  int_sf <- int_sf %>%
+      filter(!st_is_empty(.)) %>%
+      st_collection_extract("POLYGON")
+  
+  int_sf <- int_sf %>%
+      mutate(area = st_area(geometry))
+  
+  majoritario <- int_sf %>%
+      group_by(cell_id) %>%
+      slice_max(area, n = 1, with_ties = FALSE) %>%
+      ungroup() %>%
+      dplyr::select(cell_id, CD_LEGEN1)
+  
+  cells_bioma <- cells_sf %>%
+      mutate(cell_id = row_number()) %>%
+      left_join(
+        st_set_geometry(majoritario, NULL),
+        by = "cell_id"
+      ) %>%
+      dplyr::select(-cell_id)
+  
+  cells_bioma$CD_LEGEN1 <- 
+      iconv(cells_bioma$CD_LEGEN1, from = "latin1", to = "UTF-8")
+  
+  cells_bioma <- cells_bioma %>%
+      mutate(CD_LEGEN1 = factor(CD_LEGEN1,
+                              levels = sort(unique(CD_LEGEN1))))
+  
+  #vmax <- max(cells_bioma$value, na.rm = TRUE)
+  vmax<-0.015
+  mean_area<-0.5*vmax
+  myplot<-ggplot() +
+    geom_sf(data=cells_bioma, aes(fill = value), color=NA) +
+    geom_sf(data = biomes, fill = NA, color = "gray", size = 0.6) +
+    scale_fill_gradient2(
+      low     = "white",        
+      mid     = "orange",       
+      high    = "darkred",        
+      midpoint= mean_area,
+      na.value= "grey",
+      name     = "", 
+      limits    = c(0, vmax),
+      oob    = squish ,
+    ) +
+    labs(
+      title = "Cassava",
+      subtitle = y,
+      caption  = "Source: MAgPIE Default",
+    ) +
+    
+    theme_minimal() +
+    theme(
+      panel.background = element_rect(fill = "grey90", colour = NA),
+      panel.grid.major  = element_line(colour = "white")
+    ) +
+    theme(
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    ) +
+    guides(fill = guide_colorbar(
+      barwidth      = unit(0.6, "cm"),
+      barheight     = unit(2.5,   "cm"),
+    )) +
+    theme(
+      plot.title        = element_text(size = 12, face = "bold"),
+      plot.subtitle     = element_text(size = 11),
+      plot.caption      = element_text(size = 11),
+      legend.key.height = unit(1.2, "cm"),
+      legend.key.width  = unit(0.5, "cm"),
+      legend.text       = element_text(size = 11),
+      panel.grid.major  = element_line(size = 0.5),
+      panel.grid.minor  = element_line(size = 0.25)
+    )
+    plots<-append(plots, list(myplot))
+}
+wrap_plots(plots, nrow=1)
+```
+
+As in the harvested area, the model overestimated cassava production, with values exceeding the PAM/IBGE data and errors reaching $318\%$.
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+prod_cassav_pam <- c(24.52,23.06,18.20)
+prod_cassav_mag <- c(65.32,71.20,76.25)
+
+erro <- (prod_cassav_mag - prod_cassav_pam)/prod_cassav_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = prod_cassav_pam,
+  "MAgPIE (Default)" = prod_cassav_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Cassava production (Mt).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "Mt")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, Mt, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+Due to the high production values and the overestimation of the harvested area, the yields estimated by MAgPIE were close to the observed values, with errors ranging from $-4.23\%$ to $+11.07\%$.
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r message=FALSE, warning=FALSE}
+yield_cassav_pam <- c(13.95,15.24,14.99)
+yield_cassav_mag <- c(13.36,15.12,16.65)
+
+erro <- (yield_cassav_mag - yield_cassav_pam)/yield_cassav_pam
+
+df <- data.frame(
+  rbind(
+  "PAM/IBGE" = yield_cassav_pam,
+  "MAgPIE (Default)" = yield_cassav_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Cassava yields (t/ha).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+```
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "t_per_ha")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, t_per_ha, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PAM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+```{=html}
+</div>
+
+</div>
+```
+
+## Livestock
+
+Raw MAgPIE outputs for the cattle stock proxy were substantially higher than observed PPM/IBGE values, requiring correction for further analysis. First, an analysis of the inputs and outputs of the livestock module was carried out in order to identify which parameters and calculations may be contributing to the large discrepancy observed between MAgPIE results and real-world cattle stock data. It is known that the MAgPIE livestock module is influenced by several key input variables, including: $im\underline{ }pop$: population (million people per year), $pm\underline{ }kcal\underline{ }pc\underline{ }initial$: initial per capita demand (kcal/person-day), $vm\underline{ }cost\underline{ }prod$: production cost factor (in million USD 17MER per year), and $vm\underline{ }prod\underline{ }reg$: regional aggregate production (in million tons of dry matter per year). 
+
+Since the MAgPIE livestock module operates at the regional level—i.e., for Latin America as a whole, which includes Brazil—and no standardized official dataset exists for these parameters at that scale, we estimated the real-world values based on publicly available data sources.
+Table below presents a comparison between the default values assumed by MAgPIE and the estimated real-world parameters, using 2010 as the reference year.
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:40%;">
+
+``` 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+txtliv<- "
+'Variable' 'MAgPIE' 'Estimated'
+'im_pop'  '590' '597' 
+'pm_kcal_pc_initial' '174' '120'
+'vm_cost_prod' '128800' '156000'
+'vm_prod_reg' '9.13' '620'
+"
+
+dfliv <- read.table(text = txtliv, header = TRUE)
+
+reactable::reactable(
+  dfliv[, c('Variable', 'MAgPIE', 'Estimated')],  
+  highlight = TRUE,
+  striped = TRUE,
+  bordered = TRUE,
+  defaultExpanded = FALSE
+)
+```
+
+```{=html}
+</div>
+
+<div style="width:60%;">
+```
+
+
+
+The variable $vm\underline{ }prod\underline{ }reg$ is the parameter that most significantly diverges from the estimated real-world data. This discrepancy suggests that $vm\underline{ }prod\underline{ }reg$ is a key candidate contributing to the difference observed in cattle numbers, particularly as reflected in the output object $p70\underline{ }cattle\underline{ }stock\underline{ }proxy$, which is the object that contains cattle numbers to fulfill food demand. The calculation of $p70\underline{ }cattle\underline{ }stock\underline{ }proxy$ is based on the following equation:
+
+$$
+  \text{p70_cattle_stock_proxy(t,i)} = \frac{\text{im_pop(t,i)}*\text{pm_kcal_pc_initial(t,i,livst_rum)}}{\text{i70_livestock_productivity(t,i,sys_beef)}}
+$$
+
+```{=html}
+</div>
+
+</div>
+
+``` 
+
+While the variables $im\underline{ }pop$ and $pm\underline{ }kcal\underline{ }pc\underline{ }initial$ appear to be reasonably aligned with real-world data, the variable $i70\underline{ }livestock\underline{ }productivity$ — which represents the productivity indicator for livestock production, expressed in tons of fresh matter per animal per year — will be further investigated to assess whether its values are contributing to the discrepancies observed in cattle numbers. A preliminary analysis indicates that, while MAgPIE assumes a livestock productivity factor of approximately 0.04 tFM/animal/year for ruminant meat in the LAM region, real-world estimates suggest that this value should be closer to 0.70 tFM/animal/year. This substantial discrepancy reinforces the need to reassess the productivity assumptions used in the model, as they may significantly influence the accuracy of cattle stock projections.
+
+After correction, the comparison between official statistics and model outputs reveals a consistent pattern of systematic underestimation of livestock numbers by MAgPIE across all years analyzed. This correction was applied by dividing all MAgPIE values by 10,000. In 2010, the model produced a total of 75.91 million animals compared to 209.54 million reported by PPM/IBGE, corresponding to an overall error of -63.77\%. Similar results are found for 2015 and 2020, with MAgPIE underestimating the total herd by -63.31\% and -65.21\%, respectively .
+
+From a temporal perspective, both datasets indicate herd expansion between 2010 and 2020. Despite the magnitude of underestimation in absolute numbers, the model is able to reproduce the broad spatial distribution of livestock across Brazil . The maps demonstrate that MAgPIE correctly allocates higher cattle densities to the main producing regions, mirroring the spatial patterns reported in PPM/IBGE. However, the systematic bias in herd size highlights that the current livestock proxy in MAgPIE—derived from food and feed demand rather than direct herd counts—does not capture the full scale of Brazil’s cattle sector.
+
+
+```{=html}
+<div style="display:flex; gap:40px;">
+
+<div style="width:50%;">
+
+``` 
+
+```{r}
+
+number_cattle_ppm <- c(209.54,215.22,217.84)
+number_cattle_mag <- c(75.91, 78.95, 75.81)
+
+erro <- (number_cattle_mag - number_cattle_ppm)/number_cattle_ppm
+
+df <- data.frame(
+  rbind(
+  "PPM/IBGE" = number_cattle_ppm,
+  "MAgPIE (Default)" = number_cattle_mag,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(df) <- c("2010","2015","2020")
+
+knitr::kable(df, caption = "Brazil livestock numbers (mio. animals).")
+```
+
+```{=html}
+</div>
+
+<div style="width:50%;">
+``` 
+
+```{r fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+df_long <- df %>%
+  mutate(Label = rownames(df)) %>%
+  tidyr::pivot_longer(-Label,
+               names_to = "Years",
+               values_to = "mio_animals")
+
+df_plot <- df_long %>%
+  filter(Label != "Error %")
+
+ggplot(df_plot, aes(Years, mio_animals, fill = Label)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "PPM/IBGE" = "#6495ed",
+    "MAgPIE (Default)" = "#66cdaa"
+  )) +
+  theme_minimal()
+```
+
+
+```{=html}
+</div>
+
+</div>
+```
+
+
+
+## Deforestation
+
+To compare accumulated deforestation in Brazilian territory, official data provided by PRODES/INPE were collected, which are already organized by biome. Consequently, to allow comparison with MAgPIE outputs, changes were calculated for three land types: primary forest, secondary forest, and other land, and the resulting values were aggregated by biome. Both the official data and the model outputs are presented in table below.
+
+```{r message=FALSE, warning=FALSE}
+
+prodes = c(7.25,2.89,8.96,1.34,1.17,0.54,22.15)
+primforest = c(3.05,0.003,0.23,0.15,0.03,0,3.46)
+secdforest = c(0.48,0.05,1.74,2.54,0.87,0.19,5.87)
+other = c(0.07,0.67,0.59,0.33,0.05,0.22,1.94)
+magpie = c(3.6,0.72,2.57,3.02,0.95,0.41,11.27)
+  
+erro = (magpie - prodes)/prodes
+
+dfd <- data.frame(
+  rbind(
+  "PRODES/INPE" = prodes,
+  "primforest" = primforest,
+  "secdforest" = secdforest,
+  "other" = other,
+  "MAgPIE (Default)" = magpie,
+  "Error %" = round(erro*100,2)
+)
+)
+
+colnames(dfd) <- c("Amazon","Caatinga","Cerrado", "Atlantic Forest", "Pampa", "Pantanal", "Total")
+
+knitr::kable(dfd, caption = "Cumulated deforestation 2010 - 2020 (Mha)") %>%
+  row_spec(c(2,3,4), background = "#D7DFF7")  %>%
+  kable_styling(full_width = TRUE)
+```
+
+The largest discrepancy in the deforestation data is observed in the Atlantic Forest biome, where the error reaches 128.79\% compared to official statistics. The spatial distribution simulated by MAgPIE is presented below.
+
+```{r message=FALSE, warning=FALSE}
+d_prim<-land['BRA','y2010','primforest']-land['BRA','y2020','primforest']
+d_secd<-land['BRA','y2010','secdforest']-land['BRA','y2020','secdforest']
+d_other<-land['BRA','y2010','other']-land['BRA','y2020','other']
+
+des_prim<-as.data.frame(d_prim,rev=2)
+des_secd<-as.data.frame(d_secd,rev=2)
+des_other<-as.data.frame(d_other,rev=2)
+
+names(des_prim)=c("lon","lat","iso","year1","year2","land","value")
+names(des_secd)=c("lon","lat","iso","year1","year2","land","value")
+names(des_other)=c("lon","lat","iso","year1","year2","land","value")
+
+des_prim$value <- lapply(des_prim$value, function(x) pmax(x, 0))
+des_secd$value <- lapply(des_secd$value, function(x) pmax(x, 0))
+des_other$value <- lapply(des_other$value, function(x) pmax(x, 0))
+
+desmatamento_br<-des_prim[c(1:5)]
+desmatamento_br$value<-as.numeric(des_prim$value)+as.numeric(des_secd$value)+as.numeric(des_other$value)
+
+desmatamento_br$area_cell<-calArea(desmatamento_br$lon,desmatamento_br$lat,res=0.5,mha=1)
+desmatamento_br$newvalues<-desmatamento_br$area_cell*desmatamento_br$value*100 #ha
+
+map<-readRDS("clustermap_rev4.117_c200_67420_h12.rds")
+BRA<-subset(map, country=='BRA')
+coords <- strsplit(BRA$cell, "\\.")  
+mat    <- do.call(rbind, coords) 
+BRA$lon <- mat[,1]
+BRA$lat <- mat[,2]
+BRA$iso <- mat[,3]
+BRA$lon <- as.numeric(gsub("p", ".", BRA$lon))
+BRA$lat <- as.numeric(gsub("p", ".", BRA$lat))
+
+df <- BRA %>%
+  left_join(desmatamento_br, by = c("lon", "lat"))
+
+r <- rasterFromXYZ(cbind(df[,c("lon","lat", "value", "newvalues")], z=1), 
+                   res = c(min(diff(sort(unique(BRA$lon)))),
+                           min(diff(sort(unique(BRA$lat))))))
+
+polys <- rasterToPolygons(r, dissolve = FALSE)
+
+crs(polys) <- CRS("+init=EPSG:4326")
+
+cells_sf  <- st_as_sf(polys) %>%
+  st_transform(st_crs(biomes))
+
+cells_sf  <- st_make_valid(cells_sf)
+biomes <- st_make_valid(biomes)
+
+int_sf <- st_intersection(
+  cells_sf  %>% mutate(cell_id = row_number()),
+  biomes %>% dplyr::select(CD_LEGEN1))
+
+int_sf <- int_sf %>%
+  filter(!st_is_empty(.)) %>%
+  st_collection_extract("POLYGON")
+
+int_sf <- int_sf %>%
+  mutate(area = st_area(geometry))
+
+majoritario <- int_sf %>%
+  group_by(cell_id) %>%
+  slice_max(area, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  dplyr::select(cell_id, CD_LEGEN1)
+
+cells_bioma <- cells_sf %>%
+  mutate(cell_id = row_number()) %>%
+  left_join(
+    st_set_geometry(majoritario, NULL),
+    by = "cell_id"
+  ) %>%
+  dplyr::select(-cell_id)
+
+cells_bioma$CD_LEGEN1 <- 
+  iconv(cells_bioma$CD_LEGEN1, from = "latin1", to = "UTF-8")
+
+cells_bioma <- cells_bioma %>%
+  mutate(CD_LEGEN1 = factor(CD_LEGEN1,
+                            levels = sort(unique(CD_LEGEN1))))
+
+vmax <- 0.05
+mean_area<-0.5*vmax
+breaks_vec <- seq(0, vmax, by = 0.01)
+labels_vec <- comma(breaks_vec)
+labels_vec[length(labels_vec)]<-''
+myplot<-ggplot() +
+  geom_sf(data=cells_bioma, aes(fill = value), color=NA) +
+  geom_sf(data = biomes, fill = NA, color = "gray", size = 0.6) +
+ 
+  scale_fill_gradient2(
+    low     = "white",        
+    mid     = "orange",       
+    high    = "darkred",        
+    midpoint= mean_area,
+    na.value= "grey",
+    name     = "", 
+    limits    = c(0, vmax),
+    oob    = squish ,
+    breaks    = breaks_vec,            
+    labels    = labels_vec,            
+    ) +
+  labs(
+    title = "Deforestation",
+    subtitle = "2010-2020",
+    caption  = "Source: MAgPIE/Default version",
+  ) +
+  
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "grey90", colour = NA),
+    panel.grid.major  = element_line(colour = "white")
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  guides(fill = guide_colorbar(
+    barwidth      = unit(1, "cm"),
+    barheight     = unit(5,   "cm"),
+  )) +
+  theme(
+    plot.title        = element_text(size = 26, face = "bold"),
+    plot.subtitle     = element_text(size = 24),
+    plot.caption      = element_text(size = 22),
+    legend.key.height = unit(1.2, "cm"),
+    legend.key.width  = unit(0.5, "cm"),
+    legend.text       = element_text(size = 20),
+    panel.grid.major  = element_line(size = 0.5),
+    panel.grid.minor  = element_line(size = 0.25)
+  )
+print(myplot)
+
+```
+
+Now, the contribution of each land class is shown, providing relevant information on the dynamics of deforestation. In the Amazon biome, most deforestation is associated with primary forests, whereas in the Caatinga it is predominantly classified as other land. As previously noted, the largest changes were related to secondary forests, with particularly significant values observed in the Atlantic Forest and Cerrado biomes.
+
+```{r fig.height=5, fig.width=15, message=FALSE, warning=FALSE}
+plots<-list()
+typeland<-c("primforest", "secdforest", "other")
+for (l in typeland){
+  d<-land['BRA','y2010',l]-land['BRA','y2020',l]
+  des<-as.data.frame(d,rev=2)
+  names(des)=c("lon","lat","iso","year1","year2","land","value")
+  des$value <- lapply(des$value, function(x) pmax(x, 0))
+  desmat_br<-des[c(1:5)]
+  desmat_br$value<-as.numeric(des$value)
+  
+  desmat_br$area_cell<-calArea(desmat_br$lon,desmat_br$lat,res=0.5,mha=1)
+  desmat_br$newvalues<-desmat_br$area_cell*desmat_br$value*100 #ha
+  
+  map<-readRDS("clustermap_rev4.117_c200_67420_h12.rds")
+  BRA<-subset(map, country=='BRA')
+  coords <- strsplit(BRA$cell, "\\.")  
+  mat    <- do.call(rbind, coords) 
+  BRA$lon <- mat[,1]
+  BRA$lat <- mat[,2]
+  BRA$iso <- mat[,3]
+  BRA$lon <- as.numeric(gsub("p", ".", BRA$lon))
+  BRA$lat <- as.numeric(gsub("p", ".", BRA$lat))
+
+  df <- BRA %>%
+    left_join(desmat_br, by = c("lon", "lat"))
+
+  r <- rasterFromXYZ(cbind(df[,c("lon","lat", "value", "newvalues")], z=1), 
+                   res = c(min(diff(sort(unique(BRA$lon)))),
+                           min(diff(sort(unique(BRA$lat))))))
+
+  polys <- rasterToPolygons(r, dissolve = FALSE)
+
+  crs(polys) <- CRS("+init=EPSG:4326")
+
+  cells_sf  <- st_as_sf(polys) %>%
+    st_transform(st_crs(biomes))
+
+  cells_sf  <- st_make_valid(cells_sf)
+  biomes <- st_make_valid(biomes)
+
+  int_sf <- st_intersection(
+    cells_sf  %>% mutate(cell_id = row_number()),
+    biomes %>% dplyr::select(CD_LEGEN1))
+
+  int_sf <- int_sf %>%
+    filter(!st_is_empty(.)) %>%
+    st_collection_extract("POLYGON")
+
+  int_sf <- int_sf %>%
+    mutate(area = st_area(geometry))
+
+  majoritario <- int_sf %>%
+    group_by(cell_id) %>%
+    slice_max(area, n = 1, with_ties = FALSE) %>%
+    ungroup() %>%
+    dplyr::select(cell_id, CD_LEGEN1)
+
+  cells_bioma <- cells_sf %>%
+    mutate(cell_id = row_number()) %>%
+    left_join(
+      st_set_geometry(majoritario, NULL),
+    by = "cell_id"
+    ) %>%
+    dplyr::select(-cell_id)
+
+  cells_bioma$CD_LEGEN1 <- 
+    iconv(cells_bioma$CD_LEGEN1, from = "latin1", to = "UTF-8")
+
+  cells_bioma <- cells_bioma %>%
+    mutate(CD_LEGEN1 = factor(CD_LEGEN1,
+                            levels = sort(unique(CD_LEGEN1))))
+
+  vmax <- 0.05
+  mean_area<-0.5*vmax
+  breaks_vec <- seq(0, vmax, by = 0.01)
+  labels_vec <- comma(breaks_vec)
+  labels_vec[length(labels_vec)]<-''
+  myplot<-ggplot() +
+    geom_sf(data=cells_bioma, aes(fill = value), color=NA) +
+    geom_sf(data = biomes, fill = NA, color = "gray", size = 0.6) +
+ 
+    scale_fill_gradient2(
+      low     = "white",        
+      mid     = "orange",       
+      high    = "darkred",        
+      midpoint= mean_area,
+      na.value= "grey",
+      name     = "", 
+      limits    = c(0, vmax),
+      oob    = squish ,
+      breaks    = breaks_vec,            
+      labels    = labels_vec,            
+      ) +
+    labs(
+      title = l,
+      subtitle = "Deforestation 2010-2020",
+      caption  = "Source: MAgPIE/Default version",
+    ) +
+  
+    theme_minimal() +
+    theme(
+      panel.background = element_rect(fill = "grey90", colour = NA),
+      panel.grid.major  = element_line(colour = "white")
+    ) +
+    theme(
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    ) +
+    guides(fill = guide_colorbar(
+      barwidth      = unit(1, "cm"),
+      barheight     = unit(5,   "cm"),
+    )) +
+    theme(
+      plot.title        = element_text(size = 26, face = "bold"),
+      plot.subtitle     = element_text(size = 24),
+      plot.caption      = element_text(size = 22),
+      legend.key.height = unit(1.2, "cm"),
+      legend.key.width  = unit(0.5, "cm"),
+      legend.text       = element_text(size = 20),
+      panel.grid.major  = element_line(size = 0.5),
+      panel.grid.minor  = element_line(size = 0.25)
+    )
+  plots<-append(plots,myplot)
+}
+
+wrap_plots(plots, nrow=1)
+
+
+```
+
+
+Comparisons conducted for deforestation highlight the need for model adjustments to more accurately reflect the Brazilian context, including considerations of the Forest Code and the protection of designated conservation areas.
+
+
+## Synthesis of the main results
+
+The results highlight a substantial need for further refinement of MAgPIE in order to more accurately reflect the Brazilian reality. Overall, the following key points emerge from the topics evaluated:
+
+### Crops
+
+The results for the agricultural sector indicate that soybean was associated with comparatively smaller errors than the other crops across the evaluated years. In contrast, maize, sugarcane, and cotton were consistently underestimated by MAgPIE, with simulated values lower than official statistics in all three years. Regarding yields, MAgPIE tended to overestimate sugarcane productivity, while the opposite pattern was observed for maize and cotton, for which the model underestimated yields.
+
+With respect to harvested area, the results follow a pattern similar to the previous analyses: sugarcane and cotton were consistently underestimated, whereas soybean and maize showed comparatively smaller deviations. Spatial distribution, however, reveals notable limitations of the model in representing the Brazilian context. For soybean, the largest discrepancy occurred in the Caatinga biome, where MAgPIE projects substantial cultivation absent from official records. Divergences were also evident in other regions: for maize, the greatest inconsistency appeared in the Pampa biome, while for cotton, the most pronounced differences were found in the Atlantic Forest, Pampa, and Cerrado. These findings underscore the need for further refinement of the model’s spatial allocation mechanisms to more accurately reflect national production patterns.
+
+### Livestock
+
+The comparison between MAgPIE raw outputs and official PPM/IBGE data reveals systematic discrepancies in livestock numbers. Across 2010, 2015, and 2020, MAgPIE consistently overestimates the total cattle herd by more than three orders of magnitude. Despite this strong bias in absolute values, the model captures the broad spatial distribution of herds across Brazil, reproducing the relative concentration of livestock in the Cerrado, Atlantic Forest, and Amazon biomes. From a temporal perspective, both datasets indicate an expansion of the Brazilian cattle herd between 2010 and 2020, and the model broadly mirrors this trend in spatial allocation.
+
+Input–output relations of the livestock module were analyzed to identify potential sources of discrepancy. Among the key inputs considered, regional aggregate production diverged most sharply from real-world estimates. Preliminary checks showed that population and demand values align reasonably with observations, whereas productivity assumptions are problematic.
+
+After correction by a factor of 10,000, MAgPIE results consistently underestimated Brazilian livestock numbers by about -63\% to -65\% compared to PPM/IBGE. At the biome scale, errors were largest in the Cerrado and Atlantic Forest (-67\% to -70\%), while the Caatinga showed smaller deviations (-27\% to -34\%). This suggests that post-processing corrections or recalibration of the livestock proxy will be necessary for aligning MAgPIE results with observed statistics.
+
+### Deforestation
+
+In the case of deforestation, the results indicate the need for model adjustments tailored to the Brazilian context, as protected areas were identified with losses of primary forest. Similarly, the behavior of secondary forests also revealed inconsistencies that require further analysis and adaptation in order to more accurately represent land-use dynamics in Brazil.
+
+# Download Full Report (pdf)
+
+The detailed results and discussions are presented in a comprehensive report available in PDF format. For a complete analysis, please download the full report using the button below.
+
+```{=html}
+<a href="MAgPIE_PreliminaryValidation_Report_v2 1.pdf" download class="btn btn-primary" style="padding:10px 16px; font-size:16px; border-radius:6px; text-decoration:none;">
+  Download Full Report (PDF)
+</a>
+```
+
+# References 
